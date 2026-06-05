@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675" viewBox="0 0 1200 675">
+<defs>
+<linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+<stop offset="0" stop-color="#0b1120"/><stop offset="1" stop-color="#0f172a"/>
+</linearGradient>
+<radialGradient id="glow" cx="0.12" cy="0.0" r="0.9">
+<stop offset="0" stop-color="#a78bfa22"/><stop offset="1" stop-color="#a78bfa00"/>
+</radialGradient>
+</defs>
+<rect width="1200" height="675" fill="url(#bg)"/>
+<rect width="1200" height="675" fill="url(#glow)"/>
+<rect x="0" y="0" width="6" height="675" fill="#a78bfa"/>
+<text x="60" y="70" font-size="40" font-weight="700" fill="#f8fafc"
+ font-family="-apple-system,Hiragino Sans,sans-serif">gaze-control</text>
+<rect x="918" y="44" rx="14" ry="14" width="222" height="30"
+ fill="#a78bfa22" stroke="#a78bfa"/>
+<text x="1029" y="64" text-anchor="middle" font-size="13"
+ fill="#a78bfa" font-family="ui-monospace,monospace">Python · MediaPipe</text>
+<text x="60" y="108" font-size="17" fill="#94a3b8"
+ font-family="-apple-system,Hiragino Sans,sans-serif">Webカメラの視線+頭部姿勢を融合してハンズフリーでカーソル操作</text>
+<rect x="60" y="150" rx="13" ry="13" width="71" height="26" fill="#a78bfa1a" stroke="#a78bfa55"/><text x="96" y="168" text-anchor="middle" font-size="13" fill="#cbd5e1" font-family="ui-monospace,Menlo,monospace">Python</text>
+<rect x="141" y="150" rx="13" ry="13" width="182" height="26" fill="#a78bfa1a" stroke="#a78bfa55"/><text x="232" y="168" text-anchor="middle" font-size="13" fill="#cbd5e1" font-family="ui-monospace,Menlo,monospace">MediaPipe FaceMesh</text>
+<rect x="333" y="150" rx="13" ry="13" width="71" height="26" fill="#a78bfa1a" stroke="#a78bfa55"/><text x="368" y="168" text-anchor="middle" font-size="13" fill="#cbd5e1" font-family="ui-monospace,Menlo,monospace">OpenCV</text>
+<rect x="414" y="150" rx="13" ry="13" width="90" height="26" fill="#a78bfa1a" stroke="#a78bfa55"/><text x="459" y="168" text-anchor="middle" font-size="13" fill="#cbd5e1" font-family="ui-monospace,Menlo,monospace">solvePnP</text>
+<rect x="514" y="150" rx="13" ry="13" width="154" height="26" fill="#a78bfa1a" stroke="#a78bfa55"/><text x="591" y="168" text-anchor="middle" font-size="13" fill="#cbd5e1" font-family="ui-monospace,Menlo,monospace">One Euro Filter</text>
+<rect x="678" y="150" rx="13" ry="13" width="99" height="26" fill="#a78bfa1a" stroke="#a78bfa55"/><text x="727" y="168" text-anchor="middle" font-size="13" fill="#cbd5e1" font-family="ui-monospace,Menlo,monospace">pyautogui</text>
+<rect x="786" y="150" rx="13" ry="13" width="218" height="26" fill="#a78bfa1a" stroke="#a78bfa55"/><text x="896" y="168" text-anchor="middle" font-size="13" fill="#cbd5e1" font-family="ui-monospace,Menlo,monospace">pyobjc / Accessibility</text>
+<text x="60" y="194" font-size="13" fill="#a78bfa" letter-spacing="2"
+ font-family="ui-monospace,monospace">ARCHITECTURE / FLOW</text>
+<rect x="60" y="204" rx="10" ry="10" width="1080" height="46" fill="#11182799" stroke="#a78bfa66"/><circle cx="92" cy="227" r="11" fill="#a78bfa33" stroke="#a78bfa"/><text x="92" y="231" text-anchor="middle" font-size="12" fill="#a78bfa" font-family="ui-monospace,monospace">1</text><text x="118" y="232" font-size="15" fill="#e2e8f0" font-family="-apple-system,Hiragino Sans,sans-serif">カメラ入力 1280×720 → 640×480</text>
+<line x1="84" y1="250" x2="84" y2="268" stroke="#a78bfa99" stroke-width="2"/><polygon points="84,268 80,262 88,262" fill="#a78bfa99"/>
+<rect x="60" y="268" rx="10" ry="10" width="1080" height="46" fill="#11182799" stroke="#a78bfa66"/><circle cx="92" cy="291" r="11" fill="#a78bfa33" stroke="#a78bfa"/><text x="92" y="295" text-anchor="middle" font-size="12" fill="#a78bfa" font-family="ui-monospace,monospace">2</text><text x="118" y="296" font-size="15" fill="#e2e8f0" font-family="-apple-system,Hiragino Sans,sans-serif">MediaPipe FaceMesh (478点・虹彩) → 虹彩比率 ratio_x/y</text>
+<line x1="84" y1="314" x2="84" y2="332" stroke="#a78bfa99" stroke-width="2"/><polygon points="84,332 80,326 88,326" fill="#a78bfa99"/>
+<rect x="60" y="332" rx="10" ry="10" width="1080" height="46" fill="#11182799" stroke="#a78bfa66"/><circle cx="92" cy="355" r="11" fill="#a78bfa33" stroke="#a78bfa"/><text x="92" y="359" text-anchor="middle" font-size="12" fill="#a78bfa" font-family="ui-monospace,monospace">3</text><text x="118" y="360" font-size="15" fill="#e2e8f0" font-family="-apple-system,Hiragino Sans,sans-serif">多項式キャリブ f(x,y) (最小8点・IQR外れ値除去) → 画面座標</text>
+<line x1="84" y1="378" x2="84" y2="397" stroke="#a78bfa99" stroke-width="2"/><polygon points="84,397 80,391 88,391" fill="#a78bfa99"/>
+<rect x="60" y="397" rx="10" ry="10" width="1080" height="46" fill="#11182799" stroke="#a78bfa66"/><circle cx="92" cy="420" r="11" fill="#a78bfa33" stroke="#a78bfa"/><text x="92" y="424" text-anchor="middle" font-size="12" fill="#a78bfa" font-family="ui-monospace,monospace">4</text><text x="118" y="425" font-size="15" fill="#e2e8f0" font-family="-apple-system,Hiragino Sans,sans-serif">頭部姿勢 solvePnP → yaw/pitch → px/deg</text>
+<line x1="84" y1="443" x2="84" y2="461" stroke="#a78bfa99" stroke-width="2"/><polygon points="84,461 80,455 88,455" fill="#a78bfa99"/>
+<rect x="60" y="461" rx="10" ry="10" width="1080" height="46" fill="#11182799" stroke="#a78bfa66"/><circle cx="92" cy="484" r="11" fill="#a78bfa33" stroke="#a78bfa"/><text x="92" y="488" text-anchor="middle" font-size="12" fill="#a78bfa" font-family="ui-monospace,monospace">5</text><text x="118" y="489" font-size="15" fill="#e2e8f0" font-family="-apple-system,Hiragino Sans,sans-serif">速度適応融合 (≥300px/s=視線優先 / &lt;300=頭部優先)</text>
+<line x1="84" y1="507" x2="84" y2="525" stroke="#a78bfa99" stroke-width="2"/><polygon points="84,525 80,519 88,519" fill="#a78bfa99"/>
+<rect x="60" y="525" rx="10" ry="10" width="1080" height="46" fill="#11182799" stroke="#a78bfa66"/><circle cx="92" cy="548" r="11" fill="#a78bfa33" stroke="#a78bfa"/><text x="92" y="552" text-anchor="middle" font-size="12" fill="#a78bfa" font-family="ui-monospace,monospace">6</text><text x="118" y="553" font-size="15" fill="#e2e8f0" font-family="-apple-system,Hiragino Sans,sans-serif">慣性スムージング(バネ+摩擦) → カーソル移動</text>
+<line x1="84" y1="571" x2="84" y2="589" stroke="#a78bfa99" stroke-width="2"/><polygon points="84,589 80,583 88,583" fill="#a78bfa99"/>
+<rect x="60" y="589" rx="10" ry="10" width="1080" height="46" fill="#11182799" stroke="#a78bfa66"/><circle cx="92" cy="612" r="11" fill="#a78bfa33" stroke="#a78bfa"/><text x="92" y="616" text-anchor="middle" font-size="12" fill="#a78bfa" font-family="ui-monospace,monospace">7</text><text x="118" y="617" font-size="15" fill="#e2e8f0" font-family="-apple-system,Hiragino Sans,sans-serif">クリック判定 (Dwell&gt;1.2s / 瞬きEAR) → Accessibility 吸着</text>
+</svg>
