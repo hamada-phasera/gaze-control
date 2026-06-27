@@ -19,6 +19,24 @@
 
 ---
 
+## 仮想カーソル（gaze駆動・実マウスと独立）
+
+`--virtual-cursor` で、**OSの実マウスには一切触れず**、視線だけで動く「広範囲ブラーの円形カーソル」を画面に重ねて表示する。実マウスは手で今まで通り使いながら、視線カーソルを別レイヤーとして観察できる。
+
+![仮想カーソル](docs/screenshots/02-virtual-cursor.png)
+
+- 透明・クリックスルー・常時最前面のオーバーレイ（PySide6 / PyQt5）
+- 描画は専用プロセスで動作し、OpenCVのメインループと衝突しない
+- 座標は共有メモリ経由で受け渡し、`exp_smooth`（フレームレート非依存スムージング）で滑らかに追従
+- Qt未導入・GUI不可環境では自動的に無効化（本体は通常通り動作）
+
+```bash
+python main.py --virtual-cursor                 # 仮想カーソル（表示のみ・実マウス非干渉）
+python main.py --virtual-cursor --threaded-camera --debug
+```
+
+---
+
 ## 構成
 
 | モジュール | 役割 |
@@ -29,6 +47,8 @@
 | `calibration.py` | 個人差を補正するキャリブレーション |
 | `cursor_controller.py` / `gaze_pointer.py` | カーソル制御 |
 | `accessibility_snap.py` | UI要素へのスナップ |
+| `virtual_cursor.py` | gaze駆動の仮想カーソル（広範囲ブラー円・透明オーバーレイ） |
+| `camera_stream.py` | スレッド化カメラ取得（FPS底上げ） |
 
 ---
 

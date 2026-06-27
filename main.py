@@ -14,9 +14,11 @@ pyautogui.FAILSAFE = True
 
 from src import config
 from src.calibration import CalibrationOverlay
+from src.camera_stream import CameraStream
 from src.cursor_controller import CursorController
 from src.gaze_estimator import GazeEstimator, GazeResult
 from src.gaze_pointer import GazePointer
+from src.virtual_cursor import VirtualCursorOverlay
 
 
 def get_screen_size() -> Tuple[int, int]:
@@ -42,10 +44,14 @@ class GazeControlApp:
         skip_calib: bool = False,
         blink_click: bool = False,
         sensitivity: float = config.DEFAULT_SENSITIVITY,
+        virtual_cursor: bool = False,
+        threaded_camera: bool = False,
     ) -> None:
         self._debug = debug
         self._skip_calib = skip_calib
         self._sensitivity = sensitivity
+        self._virtual_cursor = virtual_cursor
+        self._threaded_camera = threaded_camera
 
         # スクリーンサイズ取得
         self._screen_w, self._screen_h = get_screen_size()
@@ -54,13 +60,22 @@ class GazeControlApp:
         # コンポーネント初期化
         self._estimator = GazeEstimator(self._screen_w, self._screen_h)
         self._estimator.sensitivity = sensitivity
-        self._controller = CursorController(blink_click=blink_click)
 
-        # 視線ポインター（半透明オーバーレイ）
+        # カーソル制御:
+        #   通常モード       → OSの実カーソルを動かす CursorController
+        #   仮想カーソルモード → OSカーソルには触れず、gazeで仮想カーソルだけを動かす
+        self._controller: Optional[CursorController] = None
+        self._vcursor: Optional[VirtualCursorOverlay] = None
+        if virtual_cursor:
+            self._vcursor = VirtualCursorOverlay(self._screen_w, self._screen_h)
+        else:
+            self._controller = CursorController(blink_click=blink_click)
+
+        # 視線ポインター（座標保持）
         self._pointer = GazePointer()
 
-        # カメラ
-        self._cap: Optional[cv2.VideoCapture] = None
+        # カメラ（生キャプチャ or スレッド化ラッパー）
+        self._cap: Optional[object] = None
 
         # 最新の視線比率（キャリブレーション用コールバック）
         self._latest_gaze_ratio: Optional[Tuple[float, float]] = None
@@ -69,23 +84,30 @@ class GazeControlApp:
         """アプリケーションを実行する"""
         # カメラ初期化（高解像度）
         try:
-            self._cap = cv2.VideoCapture(config.CAMERA_INDEX)
-            self._cap.set(cv2.CAP_PROP_FRAME_WIDTH, config.CAMERA_WIDTH)
-            self._cap.set(cv2.CAP_PROP_FRAME_HEIGHT, config.CAMERA_HEIGHT)
-            self._cap.set(cv2.CAP_PROP_FPS, config.CAMERA_FPS)
+            cap = cv2.VideoCapture(config.CAMERA_INDEX)
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH, config.CAMERA_WIDTH)
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, config.CAMERA_HEIGHT)
+            cap.set(cv2.CAP_PROP_FPS, config.CAMERA_FPS)
         except Exception as e:
             print(f"エラー: カメラを開けませんでした — {e}")
             print("カメラの接続とアクセス権限を確認してください。")
             sys.exit(1)
 
-        if not self._cap.isOpened():
+        if not cap.isOpened():
             print("エラー: カメラを開けませんでした。")
             print("カメラの接続とアクセス権限を確認してください。")
             sys.exit(1)
 
-        actual_w = int(self._cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        actual_h = int(self._cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        print(f"カメラ初期化完了 ({actual_w}x{actual_h})")
+        actual_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        actual_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+
+        # スレッド化キャプチャ: 取得を別スレッドに逃がしFPSを底上げ
+        if self._threaded_camera:
+            self._cap = CameraStream(cap).start()
+            print(f"カメラ初期化完了 ({actual_w}x{actual_h}, スレッド取得)")
+        else:
+            self._cap = cap
+            print(f"カメラ初期化完了 ({actual_w}x{actual_h})")
 
         # キャリブレーション
         if not self._skip_calib:
@@ -100,9 +122,15 @@ class GazeControlApp:
         else:
             print("キャリブレーションをスキップしました（簡易マッピングモード）")
 
-        # ポインター起動
+        # ポインター / 仮想カーソル起動
         self._pointer.start()
-        print("視線ポインターを起動しました")
+        if self._vcursor is not None:
+            if self._vcursor.start():
+                print("仮想カーソル（広範囲ブラーの円形オーバーレイ）を起動しました — OSの実マウスには干渉しません")
+            else:
+                print("注意: 仮想カーソルを起動できませんでした（PySide6/PyQt5 未導入かGUI不可の可能性）")
+        else:
+            print("視線ポインターを起動しました")
 
         # メインループ
         print("視線追跡を開始します（Q キーまたは ESC で終了）")
@@ -168,23 +196,25 @@ class GazeControlApp:
             result = self._estimator.process_frame(frame)
 
             if result is not None:
-                # カーソル制御
-                clicked = self._controller.update(
-                    target_x=result.x,
-                    target_y=result.y,
-                    left_ear=result.left_ear,
-                    right_ear=result.right_ear,
-                    confidence=result.confidence,
-                )
-
-                # 半透明ポインター更新
-                self._pointer.update_position(
-                    result.x, result.y,
-                    dwell_progress=self._controller.dwell_progress,
-                )
-
-                if clicked:
-                    print("クリック!")
+                if self._vcursor is not None:
+                    # 仮想カーソルモード: OSカーソルには触れず仮想カーソルだけを動かす（表示のみ）
+                    self._vcursor.update_position(result.x, result.y, visible=True)
+                    self._pointer.update_position(result.x, result.y)
+                else:
+                    # 通常モード: OSの実カーソルを制御
+                    clicked = self._controller.update(
+                        target_x=result.x,
+                        target_y=result.y,
+                        left_ear=result.left_ear,
+                        right_ear=result.right_ear,
+                        confidence=result.confidence,
+                    )
+                    self._pointer.update_position(
+                        result.x, result.y,
+                        dwell_progress=self._controller.dwell_progress,
+                    )
+                    if clicked:
+                        print("クリック!")
 
             # デバッグ表示
             if self._debug:
@@ -261,7 +291,7 @@ class GazeControlApp:
             )
 
             # Dwell進捗バー
-            progress = self._controller.dwell_progress
+            progress = self._controller.dwell_progress if self._controller is not None else 0.0
             if progress > 0:
                 bar_w = int(200 * progress)
                 cv2.rectangle(debug_frame, (10, 140), (10 + bar_w, 155), (0, 255, 0), -1)
@@ -319,6 +349,8 @@ class GazeControlApp:
     def _cleanup(self) -> None:
         """リソース解放"""
         self._pointer.stop()
+        if self._vcursor is not None:
+            self._vcursor.stop()
         if self._cap is not None:
             self._cap.release()
         self._estimator.release()
@@ -352,6 +384,16 @@ def parse_args() -> argparse.Namespace:
         default=config.DEFAULT_SENSITIVITY,
         help=f"視線感度 (1.0〜10.0, デフォルト: {config.DEFAULT_SENSITIVITY})",
     )
+    parser.add_argument(
+        "--virtual-cursor",
+        action="store_true",
+        help="OSカーソルを動かさず、gaze駆動の仮想カーソル（広範囲ブラーの円形オーバーレイ）を表示する",
+    )
+    parser.add_argument(
+        "--threaded-camera",
+        action="store_true",
+        help="カメラ取得を別スレッド化して実効FPSを底上げする",
+    )
     return parser.parse_args()
 
 
@@ -364,6 +406,8 @@ def main() -> None:
         skip_calib=args.skip_calib,
         blink_click=args.blink_click,
         sensitivity=args.sensitivity,
+        virtual_cursor=args.virtual_cursor,
+        threaded_camera=args.threaded_camera,
     )
 
     try:

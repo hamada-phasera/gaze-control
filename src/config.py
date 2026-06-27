@@ -149,5 +149,16 @@ SNAP_ENABLED = True            # UI要素スナップ有効/無効
 SNAP_RADIUS = 80.0             # スナップ検索半径 (px)
 SNAP_SEARCH_STEP = 10          # グリッド検索ステップ (px)
 
+# --- 仮想カーソル設定（gaze駆動・OSカーソルとは独立した表示専用カーソル）---
+# 視線で動かす「仮想カーソル」を、広範囲ブラーの円形グローとして
+# 透明・クリックスルーのオーバーレイに描画する。OSの実マウスには一切干渉しない。
+VIRTUAL_CURSOR_DIAMETER = 180        # スプライト全体の一辺 (px) — 広範囲ブラーを内包するため大きめ
+VIRTUAL_CURSOR_CORE_RATIO = 0.28     # くっきり見える中心円の半径比 (0.0〜1.0)
+VIRTUAL_CURSOR_BLUR_RATIO = 0.55     # ブラーの広がり (大きいほど halo が広範囲に)
+VIRTUAL_CURSOR_COLOR = (0, 200, 255)  # カーソル色 RGB (水色系のグロー)
+VIRTUAL_CURSOR_MAX_OPACITY = 0.85    # 最大不透明度 (0.0〜1.0)
+VIRTUAL_CURSOR_SMOOTHING = 0.35      # 追従応答性 (0<r<=1, 1/60秒あたりに詰める距離の割合)
+VIRTUAL_CURSOR_TICK_DT = 1.0 / 120.0  # オーバーレイ再描画間隔 (秒) — 滑らかな動きのため高頻度
+
 # --- デバッグ設定 ---
 DEBUG_WINDOW_NAME = "GazeControl Debug"  # デバッグウィンドウ名

@@ -1,4 +1,10 @@
 
+# python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+
 # secrets
 .env
 .env.*
