@@ -157,6 +157,21 @@ PRECISION_MODE_SENSITIVITY_MULT = 2.5  # 精密モード時の頭部感度倍率
 LEFT_EYEBROW_INDICES = [282, 283, 285, 293, 295]
 RIGHT_EYEBROW_INDICES = [52, 53, 55, 63, 65]
 
+# --- Blendshape（表情係数）ベース判定 ---
+# Tasks FaceLandmarker が出力する blendshapes は ARKit 互換スコア (0〜1)。
+# EAR/幾何より照明・距離・個人差に強い。blendshape が無い（旧FaceMesh）場合は
+# 自動的に従来手法（EAR / 眉-目間距離）へフォールバックする。
+USE_BLENDSHAPE_BLINK = True                 # 瞬きを blendshape で判定する
+BLINK_BLENDSHAPE_THRESHOLD = 0.5            # eyeBlink スコアがこれ以上で「閉眼」
+USE_BLENDSHAPE_BROW = True                  # 眉上げを blendshape で判定する
+PRECISION_MODE_BLENDSHAPE_THRESHOLD = 0.4   # browUp スコアがこれ以上で「眉上げ」
+
+BLENDSHAPE_EYE_BLINK_LEFT = "eyeBlinkLeft"
+BLENDSHAPE_EYE_BLINK_RIGHT = "eyeBlinkRight"
+BLENDSHAPE_BROW_INNER_UP = "browInnerUp"
+BLENDSHAPE_BROW_OUTER_UP_LEFT = "browOuterUpLeft"
+BLENDSHAPE_BROW_OUTER_UP_RIGHT = "browOuterUpRight"
+
 # --- Accessibility スナップ設定 ---
 SNAP_ENABLED = True            # UI要素スナップ有効/無効
 SNAP_RADIUS = 80.0             # スナップ検索半径 (px)

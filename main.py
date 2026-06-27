@@ -49,6 +49,7 @@ class GazeControlApp:
         virtual_cursor: bool = False,
         threaded_camera: bool = False,
         show_window: bool = False,
+        precision_mode: bool = False,
     ) -> None:
         self._debug = debug
         self._skip_calib = skip_calib
@@ -64,8 +65,10 @@ class GazeControlApp:
         self._screen_w, self._screen_h = get_screen_size()
         print(f"スクリーンサイズ: {self._screen_w} x {self._screen_h}")
 
-        # コンポーネント初期化
-        self._estimator = GazeEstimator(self._screen_w, self._screen_h)
+        # コンポーネント初期化（眉上げで精密モード自動切替は opt-in）
+        self._estimator = GazeEstimator(
+            self._screen_w, self._screen_h, enable_precision=precision_mode
+        )
         self._estimator.sensitivity = sensitivity
 
         # カーソル制御:
@@ -259,6 +262,7 @@ class GazeControlApp:
                         left_ear=result.left_ear,
                         right_ear=result.right_ear,
                         confidence=result.confidence,
+                        blink_score=result.blink_score,
                     )
                     self._pointer.update_position(
                         result.x, result.y,
@@ -468,6 +472,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="カメラ取得を別スレッド化して実効FPSを底上げする",
     )
+    parser.add_argument(
+        "--precision-mode",
+        action="store_true",
+        help="眉上げ（blendshape優先）で精密モードを自動切替する",
+    )
     return parser.parse_args()
 
 
@@ -483,6 +492,7 @@ def main() -> None:
         virtual_cursor=args.virtual_cursor,
         threaded_camera=args.threaded_camera,
         show_window=args.show_window,
+        precision_mode=args.precision_mode,
     )
 
     try:

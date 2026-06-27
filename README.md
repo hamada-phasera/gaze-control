@@ -43,6 +43,10 @@ python main.py --virtual-cursor --threaded-camera --debug
 
 リアルタイムすぎると推定の微小なラグ・ノイズで視線が落ち着かない。`MotionStabilizer` が **注視デッドゾーン**（微小な揺れを無視して注視点を保持）＋ **間引き確定**（中間移動はフレームを削って一定間隔でのみ反映）＋ **サッケード即追従**（大きな移動はそのまま追従）で安定化し、遅れて滑る質感を作る。
 
+### blendshape ベースの瞬き/眉上げ判定（`blendshapes.py`）
+
+Tasks `FaceLandmarker` の表情係数（ARKit互換スコア）で、**瞬き**（`eyeBlink*` → `--blink-click`）と**眉上げ**（`browInnerUp`/`browOuterUp*` → `--precision-mode` で精密モード自動切替）を判定する。EAR や眉-目間距離の幾何計算より照明・距離・個人差に強い。blendshape が得られない環境（旧FaceMesh）では従来手法へ自動フォールバック。
+
 ---
 
 ## 構成
@@ -59,6 +63,7 @@ python main.py --virtual-cursor --threaded-camera --debug
 | `camera_stream.py` | スレッド化カメラ取得（FPS底上げ） |
 | `smoothing.py` | 動き安定化（注視デッドゾーン＋間引き＝「ぬるっと」追従） |
 | `hotkeys.py` | グローバルホットキー（窓非表示でも終了/表示切替） |
+| `blendshapes.py` | 表情係数で瞬き/眉上げを判定（EAR/幾何より頑健・自動フォールバック） |
 
 ---
 

@@ -16,22 +16,20 @@
   フレーム連番で同一フレームの再処理も回避。実効FPS・体感遅延を改善。
 - **✅ 動き安定化「ぬるっと」** (`src/smoothing.py`)
   注視デッドゾーン + 間引き確定 + サッケード即追従で、ラグ由来のブレを抑えつつ滑らかに追従。
+- **✅ blendshapes ベースのジェスチャ判定** (`src/blendshapes.py`)
+  瞬き（`eyeBlink*`）と眉上げ（`browInnerUp`/`browOuterUp*`）を blendshape スコアで判定。
+  EAR/幾何より照明・距離・個人差に強い。blendshape が無い場合は従来手法へ自動フォールバック。
+  瞬き → `cursor_controller`（`--blink-click`）、眉上げ → 精密モード自動切替（`--precision-mode`）。
 
 ## 未着手（推奨度順）
 
-### ★1. blendshapes ベースのジェスチャ判定
-- 現状: 瞬きは EAR、眉上げは幾何比で判定。
-- 改善: Tasks API の blendshapes（`eyeBlinkLeft/Right`, `browInnerUp` 等）に置換すると
-  照明・個人差に強くなる。`GazeEstimator.last_blendshapes` で既に取得可能。
-- 対象: `src/cursor_controller.py`（瞬き）、`src/precision_mode.py`（眉上げ）。
-
-### ★2. キャリブレーションの正則化（Ridge 回帰）
+### ★1. キャリブレーションの正則化（Ridge 回帰）
 - 現状: `compute_calibration` が多項式特徴量 + `np.linalg.lstsq`（最小二乗）。
 - 問題: 16点に対し6次特徴量は過学習気味で、端で外れやすい。
 - 改善: Ridge（L2正則化）で係数を安定化。`(AᵀA + λI)⁻¹ Aᵀ y` を解くだけで導入可能。
 - 参考: `aciderix/React-Eye-Tracker-V1`（9点キャリブ + Ridge + head-pose補正）。
 
-### ★3. カーソル移動の低レイテンシ化（macOS）
+### ★2. カーソル移動の低レイテンシ化（macOS）
 - 現状: 毎フレーム `pyautogui.moveTo`。pyautogui は内部オーバーヘッドが大きい。
 - 改善: Quartz の `CGWarpCursorPosition` / `CGEventPost` を直接呼ぶ。
   既に PyObjC/Quartz に依存しているため追加依存なし。

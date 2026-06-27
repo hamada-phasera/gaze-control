@@ -8,7 +8,7 @@ import cv2
 import mediapipe as mp
 import numpy as np
 
-from . import config
+from . import blendshapes, config
 from .fusion import GazeFusion
 from .head_pose_estimator import HeadPoseEstimator
 
@@ -25,6 +25,8 @@ class GazeResult(NamedTuple):
     head_pitch: float = 0.0
     precision_mode: bool = False
     fusion_w_gaze: float = 1.0
+    blink_score: Optional[float] = None   # blendshape瞬きスコア(0〜1)。無ければNone
+    brow_score: Optional[float] = None    # blendshape眉上げスコア(0〜1)。無ければNone
 
 
 class OneEuroFilter:
@@ -106,7 +108,13 @@ class GazeEstimator:
     顔位置補正・多項式キャリブレーションで画面座標に変換する。
     """
 
-    def __init__(self, screen_width: int, screen_height: int, skip_model: bool = False) -> None:
+    def __init__(
+        self,
+        screen_width: int,
+        screen_height: int,
+        skip_model: bool = False,
+        enable_precision: bool = False,
+    ) -> None:
         self._screen_width = screen_width
         self._screen_height = screen_height
 
@@ -137,6 +145,16 @@ class GazeEstimator:
         self._precision_mode = False
         self._precision_anchor_x: float = 0.0
         self._precision_anchor_y: float = 0.0
+
+        # 眉上げ（blendshape優先）で精密モードを自動切替するディテクタ（opt-in）
+        self._precision_detector = None
+        if enable_precision:
+            from .precision_mode import PrecisionModeDetector
+            self._precision_detector = PrecisionModeDetector()
+
+        # 直近の出力座標（精密モード開始時のアンカー用）
+        self._last_output_x: float = screen_width / 2.0
+        self._last_output_y: float = screen_height / 2.0
 
         # One Euro Filter（虹彩比率用 — ここでノイズを元から断つ）
         self._filter_iris_x = OneEuroFilter(
@@ -303,6 +321,21 @@ class GazeEstimator:
         avg_ear = (left_ear + right_ear) / 2.0
         confidence = min(1.0, avg_ear / config.BLINK_EAR_THRESHOLD) if avg_ear < config.BLINK_EAR_THRESHOLD else 1.0
 
+        # --- Blendshape（表情係数）スコア（Tasks API利用時のみ）---
+        bs = blendshapes.score_map(self._last_blendshapes)
+        blink_score = blendshapes.blink_score(bs)
+        brow_score = blendshapes.brow_raise_score(bs)
+
+        # --- 眉上げで精密モードを自動切替（opt-in: enable_precision）---
+        if self._precision_detector is not None:
+            was_active = self._precision_mode
+            active = self._precision_detector.update(landmarks, brow_score)
+            if active and not was_active:
+                # 精密モード開始: 直前の出力位置をアンカーに固定
+                self._precision_anchor_x = self._last_output_x
+                self._precision_anchor_y = self._last_output_y
+            self._precision_mode = active
+
         # --- 視線ベースの画面座標 ---
         if self._calib_coeff_x is not None:
             features = self._poly_features(iris_x, iris_y)
@@ -365,6 +398,10 @@ class GazeEstimator:
         screen_x = max(0.0, min(float(self._screen_width - 1), screen_x))
         screen_y = max(0.0, min(float(self._screen_height - 1), screen_y))
 
+        # 精密モード開始時のアンカー用に出力を保持
+        self._last_output_x = screen_x
+        self._last_output_y = screen_y
+
         return GazeResult(
             x=screen_x, y=screen_y,
             left_ear=left_ear, right_ear=right_ear,
@@ -372,6 +409,8 @@ class GazeEstimator:
             head_yaw=head_yaw, head_pitch=head_pitch,
             precision_mode=self._precision_mode,
             fusion_w_gaze=w_gaze,
+            blink_score=blink_score,
+            brow_score=brow_score,
         )
 
     def set_precision_anchor(self, x: float, y: float) -> None:
