@@ -35,6 +35,14 @@ python main.py --virtual-cursor                 # 仮想カーソル（表示の
 python main.py --virtual-cursor --threaded-camera --debug
 ```
 
+### プレビューウィンドウは既定で非表示
+
+カメラのプレビュー窓を出すと、人はつい画面内の自分の目を見てしまい視線がそちらに引っ張られて制御が乱れる。そこで**プレビュー窓は既定で非表示**にし、カメラだけ動かす。見たい時は実行中に **`p` キーで表示/非表示をトグル**できる（`pynput` のグローバルホットキー。窓が無くても `q`/ESC で終了可能）。`--show-window` で起動時から表示、`--debug` で詳細オーバーレイ表示。
+
+### 「ぬるっと」した追従（`smoothing.py`）
+
+リアルタイムすぎると推定の微小なラグ・ノイズで視線が落ち着かない。`MotionStabilizer` が **注視デッドゾーン**（微小な揺れを無視して注視点を保持）＋ **間引き確定**（中間移動はフレームを削って一定間隔でのみ反映）＋ **サッケード即追従**（大きな移動はそのまま追従）で安定化し、遅れて滑る質感を作る。
+
 ---
 
 ## 構成
@@ -49,12 +57,14 @@ python main.py --virtual-cursor --threaded-camera --debug
 | `accessibility_snap.py` | UI要素へのスナップ |
 | `virtual_cursor.py` | gaze駆動の仮想カーソル（広範囲ブラー円・透明オーバーレイ） |
 | `camera_stream.py` | スレッド化カメラ取得（FPS底上げ） |
+| `smoothing.py` | 動き安定化（注視デッドゾーン＋間引き＝「ぬるっと」追従） |
+| `hotkeys.py` | グローバルホットキー（窓非表示でも終了/表示切替） |
 
 ---
 
 ## 技術スタック
 
-`Python 3.11` `OpenCV` `MediaPipe (FaceMesh)` `NumPy` `PyAutoGUI` `pynput` `PyObjC (Quartz / ApplicationServices)`
+`Python 3.11` `OpenCV` `MediaPipe (Tasks FaceLandmarker)` `NumPy` `PyAutoGUI` `pynput` `PySide6 (overlay)` `PyObjC (Quartz / ApplicationServices)`
 
 ---
 

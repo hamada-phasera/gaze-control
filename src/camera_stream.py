@@ -37,6 +37,7 @@ class CameraStream:
         self._lock = threading.Lock()
         self._frame: Optional[np.ndarray] = None
         self._ret: bool = False
+        self._seq: int = 0  # 取得成功ごとに増えるフレーム連番（重複処理回避用）
         self._running = False
         self._thread: Optional[threading.Thread] = None
 
@@ -55,8 +56,16 @@ class CameraStream:
             with self._lock:
                 self._ret = bool(ret)
                 self._frame = frame
+                if ret:
+                    self._seq += 1
             if not ret:
                 time.sleep(self._poll_sleep)
+
+    @property
+    def seq(self) -> int:
+        """取得済みフレームの連番。同じ値なら新フレーム未到着。"""
+        with self._lock:
+            return self._seq
 
     def read(self) -> Tuple[bool, Optional[np.ndarray]]:
         """最新フレームを返す。まだ1枚も取得できていなければ (False, None)。"""

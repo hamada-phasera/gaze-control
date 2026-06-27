@@ -85,8 +85,22 @@ class OneEuroFilter:
         self._t_prev = None
 
 
+class _LandmarksAdapter:
+    """Tasks API の出力（NormalizedLandmark のリスト）を、旧 FaceMesh と同じ
+    `landmarks.landmark[idx].x` インターフェースで参照できるようにする薄いラッパー。
+
+    これにより head_pose_estimator / precision_mode など index ベースの下流コードを
+    一切変更せずに新APIへ移行できる。
+    """
+
+    __slots__ = ("landmark",)
+
+    def __init__(self, landmark_list: object) -> None:
+        self.landmark = landmark_list
+
+
 class GazeEstimator:
-    """MediaPipe Face Meshを用いた視線推定クラス
+    """MediaPipe による視線推定クラス（Tasks FaceLandmarker 優先 / 旧FaceMeshフォールバック）
 
     虹彩の目内相対位置にOne Euro Filterを適用してノイズを除去し、
     顔位置補正・多項式キャリブレーションで画面座標に変換する。
@@ -96,17 +110,16 @@ class GazeEstimator:
         self._screen_width = screen_width
         self._screen_height = screen_height
 
-        self._face_mesh: Optional[mp.solutions.face_mesh.FaceMesh] = None
+        self._face_mesh = None          # 旧 mp.solutions.face_mesh（フォールバック）
+        self._landmarker = None         # 新 Tasks FaceLandmarker（優先）
+        self._last_ts_ms: Optional[int] = None  # VIDEOモード用の単調増加タイムスタンプ
+        self._last_blendshapes = None   # 直近フレームの表情係数（あれば）
+
         if not skip_model:
-            try:
-                self._face_mesh = mp.solutions.face_mesh.FaceMesh(
-                    max_num_faces=config.MAX_NUM_FACES,
-                    refine_landmarks=config.REFINE_LANDMARKS,
-                    min_detection_confidence=config.MIN_DETECTION_CONFIDENCE,
-                    min_tracking_confidence=config.MIN_TRACKING_CONFIDENCE,
-                )
-            except Exception as e:
-                print(f"警告: MediaPipe Face Meshの初期化に失敗しました — {e}")
+            if config.USE_FACE_LANDMARKER_TASKS:
+                self._landmarker = self._create_face_landmarker()
+            if self._landmarker is None:
+                self._face_mesh = self._create_legacy_face_mesh()
 
         # キャリブレーション
         self._calib_coeff_x: Optional[np.ndarray] = None
@@ -149,6 +162,53 @@ class GazeEstimator:
             d_cutoff=1.0,
         )
 
+    @staticmethod
+    def _create_face_landmarker():
+        """Tasks API の FaceLandmarker を生成する。失敗時は None（フォールバック）。"""
+        import os
+
+        model_path = config.FACE_LANDMARKER_MODEL_PATH
+        if not os.path.exists(model_path):
+            print(f"警告: FaceLandmarkerモデルが見つかりません ({model_path}) — 旧FaceMeshにフォールバックします")
+            return None
+        try:
+            from mediapipe.tasks import python as mp_python
+            from mediapipe.tasks.python import vision
+
+            base_options = mp_python.BaseOptions(model_asset_path=model_path)
+            options = vision.FaceLandmarkerOptions(
+                base_options=base_options,
+                running_mode=vision.RunningMode.VIDEO,
+                num_faces=config.MAX_NUM_FACES,
+                min_face_detection_confidence=config.MIN_DETECTION_CONFIDENCE,
+                min_face_presence_confidence=config.MIN_FACE_PRESENCE_CONFIDENCE,
+                min_tracking_confidence=config.MIN_TRACKING_CONFIDENCE,
+                output_face_blendshapes=config.OUTPUT_BLENDSHAPES,
+                output_facial_transformation_matrixes=False,
+            )
+            landmarker = vision.FaceLandmarker.create_from_options(options)
+            print("FaceLandmarker (Tasks API) を初期化しました")
+            return landmarker
+        except Exception as e:  # noqa: BLE001 — フォールバックするため握り潰す
+            print(f"警告: FaceLandmarker(Tasks API)の初期化に失敗しました — {e}")
+            return None
+
+    @staticmethod
+    def _create_legacy_face_mesh():
+        """旧 mp.solutions.face_mesh.FaceMesh を生成する。失敗時は None。"""
+        try:
+            face_mesh = mp.solutions.face_mesh.FaceMesh(
+                max_num_faces=config.MAX_NUM_FACES,
+                refine_landmarks=config.REFINE_LANDMARKS,
+                min_detection_confidence=config.MIN_DETECTION_CONFIDENCE,
+                min_tracking_confidence=config.MIN_TRACKING_CONFIDENCE,
+            )
+            print("MediaPipe FaceMesh (legacy) を初期化しました")
+            return face_mesh
+        except Exception as e:  # noqa: BLE001
+            print(f"警告: MediaPipe Face Meshの初期化に失敗しました — {e}")
+            return None
+
     @property
     def is_calibrated(self) -> bool:
         return self._calib_coeff_x is not None or self._calibration_matrix is not None
@@ -173,8 +233,44 @@ class GazeEstimator:
     def head_pose_estimator(self) -> HeadPoseEstimator:
         return self._head_pose
 
+    def _next_timestamp_ms(self, now: float) -> int:
+        """VIDEOモードに渡す単調増加タイムスタンプ (ms) を返す。"""
+        ts = int(now * 1000)
+        if self._last_ts_ms is not None and ts <= self._last_ts_ms:
+            ts = self._last_ts_ms + 1
+        self._last_ts_ms = ts
+        return ts
+
+    def _detect(self, rgb_frame: np.ndarray, now: float) -> Optional[object]:
+        """有効なバックエンドでランドマークを検出し、共通アダプタ形式で返す。"""
+        if self._landmarker is not None:
+            ts_ms = self._next_timestamp_ms(now)
+            try:
+                mp_image = mp.Image(
+                    image_format=mp.ImageFormat.SRGB,
+                    data=np.ascontiguousarray(rgb_frame),
+                )
+                result = self._landmarker.detect_for_video(mp_image, ts_ms)
+            except Exception:  # noqa: BLE001 — 1フレーム失敗は無視
+                return None
+            if not result.face_landmarks:
+                return None
+            self._last_blendshapes = (
+                result.face_blendshapes[0]
+                if getattr(result, "face_blendshapes", None)
+                else None
+            )
+            return _LandmarksAdapter(result.face_landmarks[0])
+
+        # 旧FaceMeshフォールバック
+        rgb_frame.flags.writeable = False
+        results = self._face_mesh.process(rgb_frame)
+        if not results.multi_face_landmarks:
+            return None
+        return results.multi_face_landmarks[0]
+
     def process_frame(self, frame: np.ndarray) -> Optional[GazeResult]:
-        if self._face_mesh is None:
+        if self._landmarker is None and self._face_mesh is None:
             return None
 
         orig_h, orig_w = frame.shape[:2]
@@ -187,14 +283,11 @@ class GazeEstimator:
         proc_h, proc_w = process_frame.shape[:2]
 
         rgb_frame = cv2.cvtColor(process_frame, cv2.COLOR_BGR2RGB)
-        rgb_frame.flags.writeable = False
-        results = self._face_mesh.process(rgb_frame)
-
-        if not results.multi_face_landmarks:
-            return None
-
-        landmarks = results.multi_face_landmarks[0]
         now = time.time()
+
+        landmarks = self._detect(rgb_frame, now)
+        if landmarks is None:
+            return None
 
         # 虹彩比率を算出（顔オフセット減算なし — 頭部姿勢は融合で活用）
         iris_x, iris_y = self._compute_iris_ratio(landmarks)
@@ -402,6 +495,16 @@ class GazeEstimator:
             return 0.0
         return float(vertical / horizontal)
 
+    @property
+    def last_blendshapes(self) -> Optional[object]:
+        """直近フレームの表情係数（Tasks API利用時のみ。無ければ None）。"""
+        return self._last_blendshapes
+
     def release(self) -> None:
+        if self._landmarker is not None:
+            try:
+                self._landmarker.close()
+            except Exception:  # noqa: BLE001
+                pass
         if self._face_mesh is not None:
             self._face_mesh.close()

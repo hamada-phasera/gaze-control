@@ -6,18 +6,24 @@
 
 ## 本ブランチで着手済み
 
-- **スレッド化カメラ取得** (`src/camera_stream.py`, `--threaded-camera`)
+- **✅ MediaPipe Tasks `FaceLandmarker` への移行** (`src/gaze_estimator.py`)
+  同梱の `models/face_landmarker.task` を使う新 Tasks API（VIDEOモード）へ移行。
+  478点（虹彩含む）+ blendshapes を出力。旧 `mp.solutions.face_mesh` には自動フォールバック。
+  下流の index ベース処理は `_LandmarksAdapter` で無改修。blendshapes は `last_blendshapes`
+  で取得可能（瞬き・眉上げ判定の置換は次段）。
+- **✅ スレッド化カメラ取得** (`src/camera_stream.py`, `--threaded-camera`)
   取得 (`VideoCapture.read`) を専用スレッドへ逃がし、メインループは常に最新フレームのみ処理。
-  取得待ちが推論時間に直列で積み上がるのを解消し、実効FPS・体感遅延を改善。
+  フレーム連番で同一フレームの再処理も回避。実効FPS・体感遅延を改善。
+- **✅ 動き安定化「ぬるっと」** (`src/smoothing.py`)
+  注視デッドゾーン + 間引き確定 + サッケード即追従で、ラグ由来のブレを抑えつつ滑らかに追従。
 
 ## 未着手（推奨度順）
 
-### ★1. MediaPipe Tasks `FaceLandmarker` への移行
-- 現状: 旧 `mp.solutions.face_mesh`（legacy solution）を使用。
-- 問題: リポジトリに **`models/face_landmarker.task` を同梱しているのに未使用**。
-- 効果: 新 Tasks API は高速かつ blendshapes（表情係数）対応。瞬き・眉上げ等の
-  ジェスチャ判定を blendshapes に置換でき、精度と堅牢性が上がる。
-- 対象: `src/gaze_estimator.py` の `FaceMesh` 初期化と `process_frame`。
+### ★1. blendshapes ベースのジェスチャ判定
+- 現状: 瞬きは EAR、眉上げは幾何比で判定。
+- 改善: Tasks API の blendshapes（`eyeBlinkLeft/Right`, `browInnerUp` 等）に置換すると
+  照明・個人差に強くなる。`GazeEstimator.last_blendshapes` で既に取得可能。
+- 対象: `src/cursor_controller.py`（瞬き）、`src/precision_mode.py`（眉上げ）。
 
 ### ★2. キャリブレーションの正則化（Ridge 回帰）
 - 現状: `compute_calibration` が多項式特徴量 + `np.linalg.lstsq`（最小二乗）。

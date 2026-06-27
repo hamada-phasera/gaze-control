@@ -18,6 +18,8 @@ from src.camera_stream import CameraStream
 from src.cursor_controller import CursorController
 from src.gaze_estimator import GazeEstimator, GazeResult
 from src.gaze_pointer import GazePointer
+from src.hotkeys import HotkeyController
+from src.smoothing import MotionStabilizer
 from src.virtual_cursor import VirtualCursorOverlay
 
 
@@ -46,12 +48,17 @@ class GazeControlApp:
         sensitivity: float = config.DEFAULT_SENSITIVITY,
         virtual_cursor: bool = False,
         threaded_camera: bool = False,
+        show_window: bool = False,
     ) -> None:
         self._debug = debug
         self._skip_calib = skip_calib
         self._sensitivity = sensitivity
         self._virtual_cursor = virtual_cursor
         self._threaded_camera = threaded_camera
+
+        # プレビューウィンドウ: 既定で非表示（窓を見ると視線が引っ張られ制御が乱れるため）。
+        # --debug または --show-window で初期表示、実行中は 'p' キーでトグルできる。
+        self._preview_visible = debug or show_window
 
         # スクリーンサイズ取得
         self._screen_w, self._screen_h = get_screen_size()
@@ -73,6 +80,17 @@ class GazeControlApp:
 
         # 視線ポインター（座標保持）
         self._pointer = GazePointer()
+
+        # 動き安定化（「ぬるっと」感）— 仮想カーソルモードで使用
+        self._stabilizer: Optional[MotionStabilizer] = (
+            MotionStabilizer() if virtual_cursor else None
+        )
+
+        # グローバルホットキー（ウィンドウ非表示でも終了/表示切替を受け付ける）
+        self._hotkeys = HotkeyController(
+            toggle_char=config.HOTKEY_TOGGLE_PREVIEW,
+            quit_chars=(config.HOTKEY_QUIT,),
+        )
 
         # カメラ（生キャプチャ or スレッド化ラッパー）
         self._cap: Optional[object] = None
@@ -181,12 +199,43 @@ class GazeControlApp:
         """メインフレームループ"""
         frame_count = 0
         fps_start = time.perf_counter()
+        last_seq = -1
+
+        # ホットキー開始。pynput不在ならウィンドウ+waitKeyにフォールバック
+        hotkeys_active = self._hotkeys.start()
+        if hotkeys_active:
+            print(
+                f"ホットキー: '{config.HOTKEY_TOGGLE_PREVIEW}'=プレビュー表示切替 / "
+                f"'{config.HOTKEY_QUIT}' または ESC=終了"
+            )
+        else:
+            print("注意: pynput未導入のため、プレビューウィンドウ常時表示で操作します（q/ESCで終了）")
+            self._preview_visible = True
+
+        if not self._preview_visible:
+            print(f"プレビューウィンドウ非表示で実行中（'{config.HOTKEY_TOGGLE_PREVIEW}' キーで表示切替）")
 
         while True:
             ret, frame = self._cap.read()
-            if not ret:
+            if not ret or frame is None:
+                if self._threaded_camera:
+                    # スレッド取得では起動直後に未取得(None)が来うる → 少し待って継続
+                    time.sleep(0.005)
+                    if hotkeys_active and self._hotkeys.should_quit:
+                        break
+                    continue
                 print("カメラからフレームを取得できませんでした。")
                 break
+
+            # スレッド取得時は同一フレームの無駄な再処理を避ける
+            if self._threaded_camera:
+                seq = self._cap.seq
+                if seq == last_seq:
+                    time.sleep(0.003)
+                    if hotkeys_active and self._hotkeys.should_quit:
+                        break
+                    continue
+                last_seq = seq
 
             # カメラ映像を左右反転（鏡像補正）
             if config.CAMERA_FLIP_HORIZONTAL:
@@ -197,9 +246,11 @@ class GazeControlApp:
 
             if result is not None:
                 if self._vcursor is not None:
-                    # 仮想カーソルモード: OSカーソルには触れず仮想カーソルだけを動かす（表示のみ）
-                    self._vcursor.update_position(result.x, result.y, visible=True)
-                    self._pointer.update_position(result.x, result.y)
+                    # 仮想カーソルモード: OSカーソルには触れず仮想カーソルだけを動かす（表示のみ）。
+                    # 動き安定化で微小なブレを削り「ぬるっと」追従させる。
+                    sx, sy = self._stabilizer.update(result.x, result.y, time.time())
+                    self._vcursor.update_position(sx, sy, visible=True)
+                    self._pointer.update_position(sx, sy)
                 else:
                     # 通常モード: OSの実カーソルを制御
                     clicked = self._controller.update(
@@ -216,9 +267,19 @@ class GazeControlApp:
                     if clicked:
                         print("クリック!")
 
-            # デバッグ表示
-            if self._debug:
-                self._draw_debug(frame, result)
+            # プレビュー表示トグル（ホットキー）
+            if hotkeys_active and self._hotkeys.poll_toggle():
+                self._preview_visible = not self._preview_visible
+                if not self._preview_visible:
+                    cv2.destroyWindow(config.DEBUG_WINDOW_NAME)
+                print(f"プレビュー: {'表示' if self._preview_visible else '非表示'}")
+
+            # プレビュー描画（表示時のみ。窓を見ると視線が引っ張られるため既定は非表示）
+            if self._preview_visible:
+                self._show_preview(frame, result)
+                key = cv2.waitKey(1) & 0xFF
+                if key == ord("q") or key == 27:  # Q or ESC
+                    break
 
             # FPS計算
             frame_count += 1
@@ -230,12 +291,19 @@ class GazeControlApp:
                 frame_count = 0
                 fps_start = time.perf_counter()
 
-            # キー入力チェック
-            key = cv2.waitKey(1) & 0xFF
-            if key == ord("q") or key == 27:  # Q or ESC
+            # ホットキー終了
+            if hotkeys_active and self._hotkeys.should_quit:
                 break
 
         self._cleanup()
+
+    def _show_preview(self, frame: np.ndarray, result: Optional[GazeResult]) -> None:
+        """ミニプレビューを表示する。--debug時は詳細オーバーレイ、通常は小さな素のフレーム。"""
+        if self._debug:
+            self._draw_debug(frame, result)
+        else:
+            small = cv2.resize(frame, (480, 270)) if frame.shape[1] > 480 else frame
+            cv2.imshow(config.DEBUG_WINDOW_NAME, small)
 
     def _draw_debug(self, frame: np.ndarray, result: Optional[GazeResult]) -> None:
         """デバッグ情報をフレームに描画して表示"""
@@ -348,6 +416,7 @@ class GazeControlApp:
 
     def _cleanup(self) -> None:
         """リソース解放"""
+        self._hotkeys.stop()
         self._pointer.stop()
         if self._vcursor is not None:
             self._vcursor.stop()
@@ -366,7 +435,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--debug",
         action="store_true",
-        help="デバッグウィンドウを表示する",
+        help="プレビューウィンドウに詳細オーバーレイを表示する（初期表示ON、'p'でトグル）",
+    )
+    parser.add_argument(
+        "--show-window",
+        action="store_true",
+        help="起動時からプレビューウィンドウを表示する（既定は非表示、'p'でトグル）",
     )
     parser.add_argument(
         "--skip-calib",
@@ -408,6 +482,7 @@ def main() -> None:
         sensitivity=args.sensitivity,
         virtual_cursor=args.virtual_cursor,
         threaded_camera=args.threaded_camera,
+        show_window=args.show_window,
     )
 
     try:

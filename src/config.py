@@ -1,5 +1,7 @@
 """GazeControl 全設定パラメータ集約モジュール"""
 
+import os
+
 import numpy as np
 
 # --- カメラ設定 ---
@@ -16,6 +18,17 @@ MAX_NUM_FACES = 1  # 検出する顔の最大数
 MIN_DETECTION_CONFIDENCE = 0.5  # 顔検出の最小信頼度 (0.0〜1.0)
 MIN_TRACKING_CONFIDENCE = 0.5  # 顔追跡の最小信頼度 (0.0〜1.0)
 REFINE_LANDMARKS = True  # 虹彩ランドマーク有効化（478点モード）
+
+# --- MediaPipe Tasks FaceLandmarker 設定 ---
+# 新しい Tasks API（同梱の .task モデルを使用）。旧 mp.solutions.face_mesh より
+# 高速・高精度で 478点（虹彩含む）+ blendshapes を出力する。
+USE_FACE_LANDMARKER_TASKS = True  # True=Tasks API優先 / 失敗時は旧FaceMeshへ自動フォールバック
+FACE_LANDMARKER_MODEL_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "models", "face_landmarker.task",
+)
+MIN_FACE_PRESENCE_CONFIDENCE = 0.5  # 顔存在の最小信頼度 (Tasks API用)
+OUTPUT_BLENDSHAPES = True  # 表情係数（瞬き・眉上げ等）を出力する
 
 # --- 虹彩ランドマークインデックス ---
 # MediaPipe Face Mesh refine_landmarks=True 時のインデックス
@@ -157,8 +170,20 @@ VIRTUAL_CURSOR_CORE_RATIO = 0.28     # くっきり見える中心円の半径�
 VIRTUAL_CURSOR_BLUR_RATIO = 0.55     # ブラーの広がり (大きいほど halo が広範囲に)
 VIRTUAL_CURSOR_COLOR = (0, 200, 255)  # カーソル色 RGB (水色系のグロー)
 VIRTUAL_CURSOR_MAX_OPACITY = 0.85    # 最大不透明度 (0.0〜1.0)
-VIRTUAL_CURSOR_SMOOTHING = 0.35      # 追従応答性 (0<r<=1, 1/60秒あたりに詰める距離の割合)
+VIRTUAL_CURSOR_SMOOTHING = 0.22      # 追従応答性 (0<r<=1) — 小さいほど「ぬるっと」遅れて滑る
 VIRTUAL_CURSOR_TICK_DT = 1.0 / 120.0  # オーバーレイ再描画間隔 (秒) — 滑らかな動きのため高頻度
+
+# --- 動き安定化（「ぬるっと」感 / ラグ由来のブレ抑制）---
+# リアルタイムすぎると微小なラグ・ノイズで視線が落ち着かないため、
+# データを間引き＋注視デッドゾーンで安定させ、滑らかな追従を作る。
+STAB_DEADZONE = 22.0          # この半径内の揺れは無視して注視点を保持 (px)
+STAB_SACCADE = 280.0          # この距離以上の移動は即追従（素早い視線移動を妨げない, px）
+STAB_COMMIT_INTERVAL = 0.07   # 中間移動の目標確定間隔 (秒) — フレームを間引いてブレを削る
+STAB_COMMIT_RATIO = 0.45      # 確定時に新座標へ寄せる割合 (0〜1, 小さいほど緩やか)
+
+# --- ホットキー設定 ---
+HOTKEY_TOGGLE_PREVIEW = "p"   # プレビューウィンドウ表示/非表示の切替キー
+HOTKEY_QUIT = "q"             # 終了キー（ESCも可）
 
 # --- デバッグ設定 ---
 DEBUG_WINDOW_NAME = "GazeControl Debug"  # デバッグウィンドウ名
