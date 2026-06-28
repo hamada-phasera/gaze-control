@@ -51,6 +51,7 @@ class GazeControlApp:
         show_window: bool = False,
         precision_mode: bool = False,
         camera_index: int = config.CAMERA_INDEX,
+        no_hotkeys: bool = False,
     ) -> None:
         self._debug = debug
         self._skip_calib = skip_calib
@@ -58,6 +59,7 @@ class GazeControlApp:
         self._virtual_cursor = virtual_cursor
         self._threaded_camera = threaded_camera
         self._camera_index = camera_index
+        self._no_hotkeys = no_hotkeys
 
         # プレビューウィンドウ: 既定で非表示（窓を見ると視線が引っ張られ制御が乱れるため）。
         # --debug または --show-window で初期表示、実行中は 'p' キーでトグルできる。
@@ -215,15 +217,16 @@ class GazeControlApp:
         fps_start = time.perf_counter()
         last_seq = -1
 
-        # ホットキー開始。pynput不在ならウィンドウ+waitKeyにフォールバック
-        hotkeys_active = self._hotkeys.start()
+        # ホットキー開始。--no-hotkeys または pynput不在ならウィンドウ+waitKeyにフォールバック
+        hotkeys_active = (not self._no_hotkeys) and self._hotkeys.start()
         if hotkeys_active:
             print(
                 f"ホットキー: '{config.HOTKEY_TOGGLE_PREVIEW}'=プレビュー表示切替 / "
                 f"'{config.HOTKEY_QUIT}' または ESC=終了"
             )
         else:
-            print("注意: pynput未導入のため、プレビューウィンドウ常時表示で操作します（q/ESCで終了）")
+            reason = "--no-hotkeys 指定" if self._no_hotkeys else "pynput未導入/利用不可"
+            print(f"注意: グローバルホットキー無効（{reason}）。プレビューウィンドウのキー(q/ESC)で操作します")
             self._preview_visible = True
 
         if not self._preview_visible:
@@ -494,6 +497,11 @@ def parse_args() -> argparse.Namespace:
         default=config.CAMERA_INDEX,
         help=f"カメラデバイス番号 (デフォルト: {config.CAMERA_INDEX}, 開けない場合は 1, 2 を試す)",
     )
+    parser.add_argument(
+        "--no-hotkeys",
+        action="store_true",
+        help="pynputグローバルホットキーを無効化（プレビュー窓のq/ESCで操作）。macでpynputがクラッシュする場合の回避用",
+    )
     return parser.parse_args()
 
 
@@ -511,6 +519,7 @@ def main() -> None:
         show_window=args.show_window,
         precision_mode=args.precision_mode,
         camera_index=args.camera_index,
+        no_hotkeys=args.no_hotkeys,
     )
 
     try:
