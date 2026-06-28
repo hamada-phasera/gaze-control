@@ -78,6 +78,11 @@ Tasks `FaceLandmarker` の表情係数（ARKit互換スコア）で、**瞬き**
 > 対応 Python: **3.9〜3.12**（3.11 推奨）。3.13 は MediaPipe の wheel が未提供のため不可。
 
 ```bash
+# かんたん起動（venv自動作成＋依存インストール＋推奨プリセットで起動）
+./run.sh
+./run.sh --recalibrate            # フラグはそのまま渡せる
+
+# 手動で行う場合
 python3.11 -m venv .venv && source .venv/bin/activate   # 3.9〜3.12 のいずれか
 pip install --upgrade pip
 pip install -r requirements.txt
