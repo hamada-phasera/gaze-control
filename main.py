@@ -50,12 +50,14 @@ class GazeControlApp:
         threaded_camera: bool = False,
         show_window: bool = False,
         precision_mode: bool = False,
+        camera_index: int = config.CAMERA_INDEX,
     ) -> None:
         self._debug = debug
         self._skip_calib = skip_calib
         self._sensitivity = sensitivity
         self._virtual_cursor = virtual_cursor
         self._threaded_camera = threaded_camera
+        self._camera_index = camera_index
 
         # プレビューウィンドウ: 既定で非表示（窓を見ると視線が引っ張られ制御が乱れるため）。
         # --debug または --show-window で初期表示、実行中は 'p' キーでトグルできる。
@@ -105,18 +107,18 @@ class GazeControlApp:
         """アプリケーションを実行する"""
         # カメラ初期化（高解像度）
         try:
-            cap = cv2.VideoCapture(config.CAMERA_INDEX)
+            cap = cv2.VideoCapture(self._camera_index)
             cap.set(cv2.CAP_PROP_FRAME_WIDTH, config.CAMERA_WIDTH)
             cap.set(cv2.CAP_PROP_FRAME_HEIGHT, config.CAMERA_HEIGHT)
             cap.set(cv2.CAP_PROP_FPS, config.CAMERA_FPS)
         except Exception as e:
             print(f"エラー: カメラを開けませんでした — {e}")
-            print("カメラの接続とアクセス権限を確認してください。")
+            self._print_camera_help()
             sys.exit(1)
 
         if not cap.isOpened():
-            print("エラー: カメラを開けませんでした。")
-            print("カメラの接続とアクセス権限を確認してください。")
+            print(f"エラー: カメラ(index={self._camera_index})を開けませんでした。")
+            self._print_camera_help()
             sys.exit(1)
 
         actual_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -156,6 +158,15 @@ class GazeControlApp:
         # メインループ
         print("視線追跡を開始します（Q キーまたは ESC で終了）")
         self._main_loop()
+
+    def _print_camera_help(self) -> None:
+        """カメラを開けない時の macOS 向けトラブルシュート案内"""
+        print("確認してください:")
+        print("  1. macOS: システム設定 > プライバシーとセキュリティ > カメラ で、")
+        print("     使用中のターミナルアプリ(Terminal/iTerm/VS Code等)を許可し、")
+        print("     ターミナルを完全に終了してから開き直す")
+        print("  2. 他アプリ(Zoom/Photo Booth/ブラウザ/iPhone連係カメラ等)がカメラを使っていないか")
+        print("  3. 別のカメラ番号を試す: --camera-index 1 （0,1,2... と順に）")
 
     def _run_calibration(self) -> bool:
         """キャリブレーションを実行"""
@@ -477,6 +488,12 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="眉上げ（blendshape優先）で精密モードを自動切替する",
     )
+    parser.add_argument(
+        "--camera-index",
+        type=int,
+        default=config.CAMERA_INDEX,
+        help=f"カメラデバイス番号 (デフォルト: {config.CAMERA_INDEX}, 開けない場合は 1, 2 を試す)",
+    )
     return parser.parse_args()
 
 
@@ -493,6 +510,7 @@ def main() -> None:
         threaded_camera=args.threaded_camera,
         show_window=args.show_window,
         precision_mode=args.precision_mode,
+        camera_index=args.camera_index,
     )
 
     try:
