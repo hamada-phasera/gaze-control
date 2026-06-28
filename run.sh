@@ -21,9 +21,9 @@ fi
 #   ./run.sh                       # プリセットそのまま
 #   ./run.sh --hold-radius 160     # プリセット + ここを上書き（固定を強く）
 #   ./run.sh --sensitivity 1.5     # 感度だけ変更、他はプリセット
+# 安定ベースライン（増幅系オフ）。利き目=両目、距離適応/レンジ/下方向ブースト等は既定(無効)。
+# 必要な調整は ./run.sh --distance-adapt 0.5 のように後から1つずつ足す。
 PRESET=(--virtual-cursor --show-window --debug --no-hotkeys --snap-shape \
-        --eye right --eye-weight 0.8 \
-        --sensitivity 1.0 --range 1.5 --distance-adapt 0.5 \
-        --dwell-time 0.3 --max-speed 1500 --down-smooth 0.5)
+        --eye both --sensitivity 1.0 --dwell-time 0.3 --max-speed 1500)
 
 exec ./.venv/bin/python main.py "${PRESET[@]}" "$@"
