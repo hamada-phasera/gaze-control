@@ -58,6 +58,7 @@ class GazeControlApp:
         cursor_smoothing: float = config.VIRTUAL_CURSOR_SMOOTHING,
         cursor_max_speed: float = config.VIRTUAL_CURSOR_MAX_SPEED,
         dwell_time: float = config.FIXATION_DWELL_TIME,
+        hold_radius: float = config.FIXATION_RELEASE_RADIUS,
         gaze_range: float = config.GAZE_RANGE_MULT,
         distance_adapt: float = config.DISTANCE_ADAPT,
         calib_file: str = config.CALIBRATION_FILE,
@@ -110,7 +111,8 @@ class GazeControlApp:
 
         # 注視ベースのターゲット確定（履歴重心+ドウェル）— 仮想カーソルモードで使用
         self._fixation: Optional[FixationTracker] = (
-            FixationTracker(dwell_time=dwell_time) if virtual_cursor else None
+            FixationTracker(dwell_time=dwell_time, release_radius=hold_radius)
+            if virtual_cursor else None
         )
 
         # グローバルホットキー（ウィンドウ非表示でも終了/表示切替を受け付ける）
@@ -630,6 +632,12 @@ def parse_args() -> argparse.Namespace:
         help=f"注視確定までの滞留時間 秒 (この時間とどまると移動。0.2〜0.5推奨, デフォルト: {config.FIXATION_DWELL_TIME})",
     )
     parser.add_argument(
+        "--hold-radius",
+        type=float,
+        default=config.FIXATION_RELEASE_RADIUS,
+        help=f"ロック保持半径 px — 大きいほどピタッと固定（近くのブレで動かない）, デフォルト: {config.FIXATION_RELEASE_RADIUS}",
+    )
+    parser.add_argument(
         "--range",
         type=float,
         default=config.GAZE_RANGE_MULT,
@@ -678,6 +686,7 @@ def main() -> None:
         cursor_smoothing=args.smoothing,
         cursor_max_speed=args.max_speed,
         dwell_time=args.dwell_time,
+        hold_radius=args.hold_radius,
         gaze_range=args.range,
         distance_adapt=args.distance_adapt,
         recalibrate=args.recalibrate,

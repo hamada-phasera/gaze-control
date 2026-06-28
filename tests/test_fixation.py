@@ -1,67 +1,63 @@
-"""FixationTracker のテスト — 履歴重心 + ドウェルで確定、移動中は保持"""
+"""FixationTracker のテスト — ロック＆エスケープ（近傍は完全静止、遠方注視で乗り換え）"""
 
 from src.fixation import FixationTracker
 
 
 def _ft() -> FixationTracker:
-    return FixationTracker(dwell_time=0.3, radius=110.0, min_move=55.0)
+    return FixationTracker(dwell_time=0.3, radius=80.0, release_radius=110.0)
 
 
 class TestFixationTracker:
-    def test_first_update_commits_input(self) -> None:
+    def test_first_update_locks_input(self) -> None:
         f = _ft()
         tx, ty, committed = f.update(500.0, 500.0, 0.0)
         assert (tx, ty) == (500.0, 500.0)
         assert committed is True
 
-    def test_commits_after_dwell_on_steady_gaze(self) -> None:
-        """新しい場所を dwell_time とどまると、その重心へ確定する"""
+    def test_holds_perfectly_still_within_release_radius(self) -> None:
+        """ロック近傍（release_radius内）の揺れ・ドリフトでは一切動かない"""
         f = _ft()
-        f.update(500.0, 500.0, 0.0)  # 初期ターゲット
+        f.update(1000.0, 1000.0, 0.0)
+        tx = ty = None
+        for i in range(1, 80):
+            t = i * 0.02
+            # ±45px のジッタ（< release 110）
+            x = 1000.0 + (i % 5 - 2) * 22.0
+            y = 1000.0 + (i % 3 - 1) * 22.0
+            tx, ty, committed = f.update(x, y, t)
+            assert committed is False
+        assert (tx, ty) == (1000.0, 1000.0)  # 完全に固定
 
+    def test_switches_to_far_steady_gaze(self) -> None:
+        """release_radius の外を dwell とどまると、その重心へ乗り換える"""
+        f = _ft()
+        f.update(0.0, 0.0, 0.0)  # lock at origin
         committed_target = None
         for i in range(1, 60):
             t = i * 0.02
-            # (1000,800) 付近に小さなジッタ（半径~10px）で滞留
-            x = 1000.0 + (i % 3 - 1) * 6.0
-            y = 800.0 + (i % 2) * 6.0
+            x = 600.0 + (i % 3 - 1) * 8.0
+            y = 400.0 + (i % 2) * 8.0
             tx, ty, committed = f.update(x, y, t)
             if committed:
                 committed_target = (tx, ty)
                 break
-
         assert committed_target is not None
-        assert abs(committed_target[0] - 1000.0) < 60.0
-        assert abs(committed_target[1] - 800.0) < 60.0
+        assert abs(committed_target[0] - 600.0) < 60.0
+        assert abs(committed_target[1] - 400.0) < 60.0
 
-    def test_holds_target_while_moving(self) -> None:
-        """視線が動き続ける間は確定せず、ターゲットを保持する"""
+    def test_scanning_does_not_switch(self) -> None:
+        """遠くを見ても、動き続けている間は乗り換えない（ロック保持）"""
         f = _ft()
         f.update(0.0, 0.0, 0.0)
-
         any_commit = False
         last = None
         for i in range(1, 40):
             t = i * 0.02
-            tx, ty, committed = f.update(i * 120.0, 0.0, t)  # 大きく動き続ける
+            tx, ty, committed = f.update(i * 100.0, 0.0, t)  # 動き続け（spread大）
             any_commit = any_commit or committed
             last = (tx, ty)
-
         assert any_commit is False
-        assert last == (0.0, 0.0)  # 初期ターゲットを保持
-
-    def test_no_recommit_for_tiny_move(self) -> None:
-        """min_move 未満の重心移動では再確定しない"""
-        f = _ft()
-        f.update(1000.0, 1000.0, 0.0)
-
-        tx = ty = None
-        for i in range(1, 60):
-            t = i * 0.02
-            # 目標(1000,1000)からごく近い場所（~15px）に滞留
-            tx, ty, _ = f.update(1010.0 + (i % 2) * 4.0, 1005.0, t)
-
-        assert (tx, ty) == (1000.0, 1000.0)
+        assert last == (0.0, 0.0)
 
     def test_reset(self) -> None:
         f = _ft()
