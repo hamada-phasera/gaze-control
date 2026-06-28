@@ -106,6 +106,7 @@ class GazeEstimator:
         self._head_pitch_assist = config.HEAD_PITCH_ASSIST  # 縦だけ頭のピッチで補助
         self._head_comp = config.HEAD_COMP_X  # 横の頭ドリフト補正
         self._head_norm = config.GAZE_HEAD_NORM  # 頭部正規化（比率段階でヨー/ピッチのズレを打ち消す）
+        self._gaze_3d = config.GAZE_3D  # True=虹彩比率を目のローカル3D平面で測る（頭部回転に不変）
         self._blend_gaze = config.USE_BLEND_GAZE  # True=eyeLook blendshapeを視線信号に使う
 
         # 精密モード状態
@@ -351,6 +352,14 @@ class GazeEstimator:
     @head_norm.setter
     def head_norm(self, value: float) -> None:
         self._head_norm = float(value)
+
+    @property
+    def gaze_3d(self) -> bool:
+        return self._gaze_3d
+
+    @gaze_3d.setter
+    def gaze_3d(self, value: bool) -> None:
+        self._gaze_3d = bool(value)
 
     @property
     def head_pose_estimator(self) -> HeadPoseEstimator:
@@ -727,45 +736,97 @@ class GazeEstimator:
         iris_y -= strength * ky * dpitch_deg
         return iris_x, iris_y
 
-    def _compute_iris_ratio(self, landmarks: object) -> Tuple[float, float]:
-        lm = landmarks.landmark
+    @staticmethod
+    def _eye_indices(eye: str) -> Tuple[int, int, int, int, int]:
+        """(iris, inner, outer, top, bottom) のランドマークindexを返す。"""
+        if eye == "left":
+            return (
+                config.LEFT_IRIS_CENTER, config.LEFT_EYE_INNER,
+                config.LEFT_EYE_OUTER, config.LEFT_EYE_TOP, config.LEFT_EYE_BOTTOM,
+            )
+        return (
+            config.RIGHT_IRIS_CENTER, config.RIGHT_EYE_INNER,
+            config.RIGHT_EYE_OUTER, config.RIGHT_EYE_TOP, config.RIGHT_EYE_BOTTOM,
+        )
+
+    @staticmethod
+    def iris_ratio_3d(
+        iris: np.ndarray, inner: np.ndarray, outer: np.ndarray,
+        top: np.ndarray, bottom: np.ndarray,
+    ) -> Tuple[float, float]:
+        """虹彩オフセットを「目のローカル3D平面」に投影し、頭部回転に概ね不変な
+        (ratio_x, ratio_y) を返す。各引数は 3D点 np.array([x, y, z])。
+
+        - u = 目頭→目尻（横軸）、v = u に直交する目平面内の縦軸。
+        - u/v は頭と一緒に回るので、頭が回っても見かけのズレが相殺される
+          （2Dの画像投影で起きる前後の見かけズレを除去）。
+        - 左右の目で符号をそろえる（+x=虹彩が画像右へ, +y=虹彩が画像下へ）ので、
+          両目が打ち消さず補強し合う（2Dは目頭→目尻の向きが左右で逆＝相殺しがち）。
+        """
+        eye_center = (inner + outer) / 2.0
+        u = outer - inner
+        u_len = max(1e-6, float(np.linalg.norm(u)))
+        u_hat = u / u_len
+        if u_hat[0] < 0.0:           # 画像右(+x)を正にそろえる
+            u_hat = -u_hat
+
+        vert = bottom - top
+        vert_len = max(1e-6, float(np.linalg.norm(vert)))
+        v = vert - float(np.dot(vert, u_hat)) * u_hat   # u成分を抜いて目平面内の縦軸へ
+        v_len = float(np.linalg.norm(v))
+        if v_len < 1e-9:
+            v_hat = np.zeros(3)
+        else:
+            v_hat = v / v_len
+            if v_hat[1] < 0.0:       # 画像下(+y)を正にそろえる
+                v_hat = -v_hat
+
+        diff = iris - eye_center
+        ratio_x = float(np.dot(diff, u_hat)) / u_len
+        ratio_y = float(np.dot(diff, v_hat)) / vert_len
+        return ratio_x, ratio_y
+
+    def _eye_ratio_3d(self, lm: object, eye: str) -> Tuple[float, float]:
+        i_iris, i_inner, i_outer, i_top, i_bottom = self._eye_indices(eye)
+
+        def pt3(idx: int) -> np.ndarray:
+            p = lm[idx]
+            return np.array([p.x, p.y, getattr(p, "z", 0.0)], dtype=np.float64)
+
+        return self.iris_ratio_3d(
+            pt3(i_iris), pt3(i_inner), pt3(i_outer), pt3(i_top), pt3(i_bottom)
+        )
+
+    def _eye_ratio_2d(self, lm: object, eye: str) -> Tuple[float, float]:
+        i_iris, i_inner, i_outer, i_top, i_bottom = self._eye_indices(eye)
 
         def pt(idx: int) -> np.ndarray:
             return np.array([lm[idx].x, lm[idx].y])
 
-        # 左目
-        left_iris = pt(config.LEFT_IRIS_CENTER)
-        left_inner = pt(config.LEFT_EYE_INNER)
-        left_outer = pt(config.LEFT_EYE_OUTER)
+        iris = pt(i_iris)
+        center = (pt(i_inner) + pt(i_outer)) / 2.0
+        width = max(0.001, float(np.linalg.norm(pt(i_outer) - pt(i_inner))))
 
-        left_eye_center = (left_inner + left_outer) / 2.0
-        left_eye_width = max(0.001, np.linalg.norm(left_outer - left_inner))
+        d = pt(i_outer) - pt(i_inner)
+        d_hat = d / np.linalg.norm(d)
+        perp = np.array([-d_hat[1], d_hat[0]])
 
-        left_dir = left_outer - left_inner
-        left_dir_norm = left_dir / np.linalg.norm(left_dir)
-        left_perp = np.array([-left_dir_norm[1], left_dir_norm[0]])
+        diff = iris - center
+        ratio_x = float(np.dot(diff, d_hat)) / width
+        ratio_y = float(np.dot(diff, perp)) / max(
+            0.001, float(np.linalg.norm(pt(i_bottom) - pt(i_top)))
+        )
+        return ratio_x, ratio_y
 
-        left_diff = left_iris - left_eye_center
-        left_ratio_x = np.dot(left_diff, left_dir_norm) / left_eye_width
-        left_ratio_y = np.dot(left_diff, left_perp) / max(0.001, np.linalg.norm(
-            pt(config.LEFT_EYE_BOTTOM) - pt(config.LEFT_EYE_TOP)))
+    def _compute_iris_ratio(self, landmarks: object) -> Tuple[float, float]:
+        lm = landmarks.landmark
 
-        # 右目
-        right_iris = pt(config.RIGHT_IRIS_CENTER)
-        right_inner = pt(config.RIGHT_EYE_INNER)
-        right_outer = pt(config.RIGHT_EYE_OUTER)
-
-        right_eye_center = (right_inner + right_outer) / 2.0
-        right_eye_width = max(0.001, np.linalg.norm(right_outer - right_inner))
-
-        right_dir = right_outer - right_inner
-        right_dir_norm = right_dir / np.linalg.norm(right_dir)
-        right_perp = np.array([-right_dir_norm[1], right_dir_norm[0]])
-
-        right_diff = right_iris - right_eye_center
-        right_ratio_x = np.dot(right_diff, right_dir_norm) / right_eye_width
-        right_ratio_y = np.dot(right_diff, right_perp) / max(0.001, np.linalg.norm(
-            pt(config.RIGHT_EYE_BOTTOM) - pt(config.RIGHT_EYE_TOP)))
+        if self._gaze_3d:
+            left_ratio_x, left_ratio_y = self._eye_ratio_3d(lm, "left")
+            right_ratio_x, right_ratio_y = self._eye_ratio_3d(lm, "right")
+        else:
+            left_ratio_x, left_ratio_y = self._eye_ratio_2d(lm, "left")
+            right_ratio_x, right_ratio_y = self._eye_ratio_2d(lm, "right")
 
         # 利き目に重みを寄せて合成（両目平均だと利き目とのズレが出る）
         wl, wr = self._eye_weights(self._dominant_eye, self._dominant_weight)

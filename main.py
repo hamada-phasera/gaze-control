@@ -77,6 +77,7 @@ class GazeControlApp:
         head_assist: float = config.HEAD_PITCH_ASSIST,
         head_comp: float = config.HEAD_COMP_X,
         head_norm: float = config.GAZE_HEAD_NORM,
+        gaze_3d: bool = config.GAZE_3D,
         blend_gaze: bool = False,
     ) -> None:
         self._debug = debug
@@ -117,6 +118,7 @@ class GazeControlApp:
         self._estimator.head_pitch_assist = head_assist  # 縦だけ頭のピッチで補助
         self._estimator.head_comp = head_comp  # 横の頭ドリフト補正
         self._estimator.head_norm = head_norm  # 頭部正規化（比率段階でヨー/ピッチのズレを打ち消す）
+        self._estimator.gaze_3d = gaze_3d  # 虹彩比率を目のローカル3D平面で測る（頭部回転に不変）
         self._estimator.blend_gaze = blend_gaze  # eyeLook blendshapeを視線信号に使う（実験的）
 
         # カーソル制御:
@@ -792,6 +794,12 @@ def parse_args() -> argparse.Namespace:
         help="頭部正規化の強さ（推奨）。基準からの顔の向きズレを校正の手前で打ち消す。"
              "1.0前後から試す, 逆効きなら負値, 0で無効。要 --recalibrate",
     )
+    parser.add_argument(
+        "--gaze-3d",
+        action="store_true",
+        help="虹彩比率を目のローカル3D平面で測る（④-lite）。頭の向きに原理的に強く、"
+             "左右の目の符号もそろえて補強し合う。信号が2Dと変わるので要 --recalibrate",
+    )
     return parser.parse_args()
 
 
@@ -832,6 +840,7 @@ def main() -> None:
         head_assist=args.head_assist,
         head_comp=args.head_comp,
         head_norm=args.head_normalize,
+        gaze_3d=args.gaze_3d,
         blend_gaze=args.blend_gaze,
     )
 
