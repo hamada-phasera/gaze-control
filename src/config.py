@@ -185,7 +185,7 @@ VIRTUAL_CURSOR_CORE_RATIO = 0.28     # くっきり見える中心円の半径�
 VIRTUAL_CURSOR_BLUR_RATIO = 0.55     # ブラーの広がり (大きいほど halo が広範囲に)
 VIRTUAL_CURSOR_COLOR = (0, 200, 255)  # カーソル色 RGB (水色系のグロー)
 VIRTUAL_CURSOR_MAX_OPACITY = 0.85    # 最大不透明度 (0.0〜1.0)
-VIRTUAL_CURSOR_SMOOTHING = 0.22      # 追従応答性 (0<r<=1) — 小さいほど「ぬるっと」遅れて滑る
+VIRTUAL_CURSOR_SMOOTHING = 0.12      # 追従応答性 (0<r<=1) — 小さいほど「ぬるっと」遅く滑る（--smoothingで上書き可）
 VIRTUAL_CURSOR_TICK_DT = 1.0 / 120.0  # オーバーレイ再描画間隔 (秒) — 滑らかな動きのため高頻度
 
 # --- 動き安定化（「ぬるっと」感 / ラグ由来のブレ抑制）---

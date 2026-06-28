@@ -52,6 +52,7 @@ class GazeControlApp:
         precision_mode: bool = False,
         camera_index: int = config.CAMERA_INDEX,
         no_hotkeys: bool = False,
+        cursor_smoothing: float = config.VIRTUAL_CURSOR_SMOOTHING,
     ) -> None:
         self._debug = debug
         self._skip_calib = skip_calib
@@ -81,7 +82,9 @@ class GazeControlApp:
         self._controller: Optional[CursorController] = None
         self._vcursor: Optional[VirtualCursorOverlay] = None
         if virtual_cursor:
-            self._vcursor = VirtualCursorOverlay(self._screen_w, self._screen_h)
+            self._vcursor = VirtualCursorOverlay(
+                self._screen_w, self._screen_h, smoothing=cursor_smoothing
+            )
         else:
             self._controller = CursorController(blink_click=blink_click)
 
@@ -170,6 +173,13 @@ class GazeControlApp:
         print("  2. 他アプリ(Zoom/Photo Booth/ブラウザ/iPhone連係カメラ等)がカメラを使っていないか")
         print("  3. 別のカメラ番号を試す: --camera-index 1 （0,1,2... と順に）")
 
+    def _do_reset(self) -> None:
+        """カーソル位置と頭部基準をリセットして中央付近へ戻す。"""
+        self._estimator.reset_runtime()
+        if self._stabilizer is not None:
+            self._stabilizer.reset()
+        print("リセット: 頭部基準とカーソル位置を再設定しました")
+
     def _run_calibration(self) -> bool:
         """キャリブレーションを実行"""
         overlay = CalibrationOverlay(
@@ -222,7 +232,7 @@ class GazeControlApp:
         if hotkeys_active:
             print(
                 f"ホットキー: '{config.HOTKEY_TOGGLE_PREVIEW}'=プレビュー表示切替 / "
-                f"'{config.HOTKEY_QUIT}' または ESC=終了"
+                f"'r'=リセット / '{config.HOTKEY_QUIT}' または ESC=終了"
             )
         else:
             reason = "--no-hotkeys 指定" if self._no_hotkeys else "pynput未導入/利用不可"
@@ -292,12 +302,18 @@ class GazeControlApp:
                     cv2.destroyWindow(config.DEBUG_WINDOW_NAME)
                 print(f"プレビュー: {'表示' if self._preview_visible else '非表示'}")
 
+            # リセット（ホットキー）
+            if hotkeys_active and self._hotkeys.poll_reset():
+                self._do_reset()
+
             # プレビュー描画（表示時のみ。窓を見ると視線が引っ張られるため既定は非表示）
             if self._preview_visible:
                 self._show_preview(frame, result)
                 key = cv2.waitKey(1) & 0xFF
                 if key == ord("q") or key == 27:  # Q or ESC
                     break
+                elif key == ord("r"):  # リセット
+                    self._do_reset()
 
             # FPS計算
             frame_count += 1
@@ -502,6 +518,12 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="pynputグローバルホットキーを無効化（プレビュー窓のq/ESCで操作）。macでpynputがクラッシュする場合の回避用",
     )
+    parser.add_argument(
+        "--smoothing",
+        type=float,
+        default=config.VIRTUAL_CURSOR_SMOOTHING,
+        help=f"仮想カーソルの追従応答性 (0<r<=1, 小さいほど遅くぬるっと, デフォルト: {config.VIRTUAL_CURSOR_SMOOTHING})",
+    )
     return parser.parse_args()
 
 
@@ -520,6 +542,7 @@ def main() -> None:
         precision_mode=args.precision_mode,
         camera_index=args.camera_index,
         no_hotkeys=args.no_hotkeys,
+        cursor_smoothing=args.smoothing,
     )
 
     try:

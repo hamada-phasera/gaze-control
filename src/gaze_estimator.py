@@ -363,6 +363,23 @@ class GazeEstimator:
     def reset_face_baseline(self) -> None:
         self._head_pose.reset_baseline()
 
+    def reset_runtime(self) -> None:
+        """実行中リセット: フィルタ・頭部基準・融合・精密モードを初期化して中央へ戻す。
+
+        カーソルが端に張り付いた／ドリフトした時に、現在の頭の向きを新しい基準
+        （正面）として取り直し、出力を画面中央付近へ復帰させる。
+        """
+        self._filter_iris_x.reset()
+        self._filter_iris_y.reset()
+        self._filter_screen_x.reset()
+        self._filter_screen_y.reset()
+        self._head_pose.reset()   # 基準クリア → 次フレームで現在の頭部姿勢を基準に再設定
+        self._fusion.reset()
+        self._precision_mode = False
+        self._last_ts_ms = None
+        self._last_output_x = self._screen_width / 2.0
+        self._last_output_y = self._screen_height / 2.0
+
     def set_calibration(self, matrix: np.ndarray, offset: np.ndarray) -> None:
         self._calibration_matrix = matrix.copy()
         self._calibration_offset = offset.copy()

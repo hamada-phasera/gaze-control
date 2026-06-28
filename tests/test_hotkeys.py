@@ -42,6 +42,14 @@ class TestHotkeyController:
         assert h.should_quit is False
         assert h.poll_toggle() is False
 
+    def test_reset_key(self) -> None:
+        h = HotkeyController(reset_char="r")
+        assert h.poll_reset() is False
+        h._handle_char("r")
+        assert h.poll_reset() is True
+        # 一度消費したら False
+        assert h.poll_reset() is False
+
     def test_custom_keys(self) -> None:
         h = HotkeyController(toggle_char="v", quit_chars=("x", "e"))
         h._handle_char("v")

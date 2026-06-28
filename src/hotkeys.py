@@ -18,11 +18,18 @@ from typing import Iterable, Optional
 class HotkeyController:
     """終了・プレビュー切替のグローバルホットキー。"""
 
-    def __init__(self, toggle_char: str = "p", quit_chars: Iterable[str] = ("q",)) -> None:
+    def __init__(
+        self,
+        toggle_char: str = "p",
+        quit_chars: Iterable[str] = ("q",),
+        reset_char: str = "r",
+    ) -> None:
         self._toggle_char = toggle_char.lower()
         self._quit_chars = {c.lower() for c in quit_chars}
+        self._reset_char = reset_char.lower()
         self._should_quit = False
         self._toggle_pending = False
+        self._reset_pending = False
         self._listener = None
 
     @property
@@ -33,6 +40,13 @@ class HotkeyController:
         """前回のpoll以降にトグルが要求されていれば True を一度だけ返す。"""
         if self._toggle_pending:
             self._toggle_pending = False
+            return True
+        return False
+
+    def poll_reset(self) -> bool:
+        """前回のpoll以降にリセットが要求されていれば True を一度だけ返す。"""
+        if self._reset_pending:
+            self._reset_pending = False
             return True
         return False
 
@@ -48,6 +62,8 @@ class HotkeyController:
             self._should_quit = True
         elif ch == self._toggle_char:
             self._toggle_pending = True
+        elif ch == self._reset_char:
+            self._reset_pending = True
 
     def start(self) -> bool:
         """pynputリスナーを開始する。pynput不在なら False。"""
