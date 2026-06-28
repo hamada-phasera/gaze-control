@@ -100,8 +100,10 @@ class TestRotationInvariance:
         base = _r3(*pts)
         R = _rot_y(np.radians(25)) @ _rot_x(np.radians(-18))
         rotated = _r3(*_apply(R, pts))
+        # 横は3D投影なので複合回転でも厳密に不変
         assert rotated[0] == pytest.approx(base[0], abs=1e-9)
-        assert rotated[1] == pytest.approx(base[1], abs=1e-9)
+        # 縦は画像平面(2D)。複合の面外回転では近似不変（zノイズ回避とのトレードオフ）
+        assert rotated[1] == pytest.approx(base[1], abs=0.02)
 
 
 class TestMatches2DOnFrontalNonFlippedEye:

@@ -792,36 +792,37 @@ class GazeEstimator:
         iris: np.ndarray, inner: np.ndarray, outer: np.ndarray,
         top: np.ndarray, bottom: np.ndarray,
     ) -> Tuple[float, float]:
-        """虹彩オフセットを「目のローカル3D平面」に投影し、頭部回転に概ね不変な
-        (ratio_x, ratio_y) を返す。各引数は 3D点 np.array([x, y, z])。
+        """虹彩オフセットから (ratio_x, ratio_y) を返す。各引数は 3D点 [x, y, z]。
 
-        - u = 目頭→目尻（横軸）、v = u に直交する目平面内の縦軸。
-        - u/v は頭と一緒に回るので、頭が回っても見かけのズレが相殺される
-          （2Dの画像投影で起きる前後の見かけズレを除去）。
-        - 左右の目で符号をそろえる（+x=虹彩が画像右へ, +y=虹彩が画像下へ）ので、
-          両目が打ち消さず補強し合う（2Dは目頭→目尻の向きが左右で逆＝相殺しがち）。
+        横 (ratio_x): 目頭→目尻の3D軸 u に投影。u は頭と一緒に回るので、頭が
+          ヨー回転しても見かけのズレが相殺される（2D画像投影の前後ズレを除去）。
+        縦 (ratio_y): 画像平面で u に直交する縦軸へ投影。縦は目の上下動が小さく、
+          MediaPipe の z 座標ノイズに弱いので、z を使うと縦信号が汚れて潰れる
+          （Yが動かなくなる）。そこで縦だけは安定な画像平面(2D)で測る。
+        両軸とも左右の目で符号をそろえる（+x=虹彩が画像右, +y=虹彩が画像下）ので、
+        両目が打ち消さず補強し合う（2Dは目頭→目尻の向きが左右逆＝相殺しがち）。
         """
         eye_center = (inner + outer) / 2.0
+        diff = iris - eye_center
+
+        # --- 横: 3D（頭ヨーに不変）---
         u = outer - inner
         u_len = max(1e-6, float(np.linalg.norm(u)))
         u_hat = u / u_len
         if u_hat[0] < 0.0:           # 画像右(+x)を正にそろえる
             u_hat = -u_hat
-
-        vert = bottom - top
-        vert_len = max(1e-6, float(np.linalg.norm(vert)))
-        v = vert - float(np.dot(vert, u_hat)) * u_hat   # u成分を抜いて目平面内の縦軸へ
-        v_len = float(np.linalg.norm(v))
-        if v_len < 1e-9:
-            v_hat = np.zeros(3)
-        else:
-            v_hat = v / v_len
-            if v_hat[1] < 0.0:       # 画像下(+y)を正にそろえる
-                v_hat = -v_hat
-
-        diff = iris - eye_center
         ratio_x = float(np.dot(diff, u_hat)) / u_len
-        ratio_y = float(np.dot(diff, v_hat)) / vert_len
+
+        # --- 縦: 画像平面2D（zノイズを避け安定）---
+        u2 = u[:2]
+        u2_len = max(1e-6, float(np.linalg.norm(u2)))
+        u2_hat = u2 / u2_len
+        perp = np.array([-u2_hat[1], u2_hat[0]])   # u に直交（画像平面）
+        if perp[1] < 0.0:            # 画像下(+y)を正にそろえる
+            perp = -perp
+        eye_h = max(1e-6, float(np.linalg.norm((bottom - top)[:2])))
+        ratio_y = float(np.dot(diff[:2], perp)) / eye_h
+
         return ratio_x, ratio_y
 
     def _eye_ratio_3d(self, lm: object, eye: str) -> Tuple[float, float]:
