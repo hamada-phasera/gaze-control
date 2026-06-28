@@ -56,3 +56,17 @@ class TestHotkeyController:
         assert h.poll_toggle() is True
         h._handle_char("e")
         assert h.should_quit is True
+
+    def test_recenter_key(self) -> None:
+        h = HotkeyController(recenter_char="c")
+        assert h.poll_recenter() is False
+        h._handle_char("c")
+        assert h.poll_recenter() is True
+        # 一度消費したら False
+        assert h.poll_recenter() is False
+
+    def test_recenter_independent_of_reset(self) -> None:
+        h = HotkeyController(reset_char="r", recenter_char="c")
+        h._handle_char("c")
+        assert h.poll_reset() is False      # リセットは立たない
+        assert h.poll_recenter() is True

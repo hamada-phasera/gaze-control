@@ -23,13 +23,16 @@ class HotkeyController:
         toggle_char: str = "p",
         quit_chars: Iterable[str] = ("q",),
         reset_char: str = "r",
+        recenter_char: str = "c",
     ) -> None:
         self._toggle_char = toggle_char.lower()
         self._quit_chars = {c.lower() for c in quit_chars}
         self._reset_char = reset_char.lower()
+        self._recenter_char = recenter_char.lower()
         self._should_quit = False
         self._toggle_pending = False
         self._reset_pending = False
+        self._recenter_pending = False
         self._listener = None
 
     @property
@@ -50,6 +53,13 @@ class HotkeyController:
             return True
         return False
 
+    def poll_recenter(self) -> bool:
+        """前回のpoll以降に再センタリングが要求されていれば True を一度だけ返す。"""
+        if self._recenter_pending:
+            self._recenter_pending = False
+            return True
+        return False
+
     def _handle_char(self, ch: Optional[str], is_esc: bool = False) -> None:
         """押下キーからフラグを更新する純粋ロジック（テスト対象）。"""
         if is_esc:
@@ -64,6 +74,8 @@ class HotkeyController:
             self._toggle_pending = True
         elif ch == self._reset_char:
             self._reset_pending = True
+        elif ch == self._recenter_char:
+            self._recenter_pending = True
 
     def start(self) -> bool:
         """pynputリスナーを開始する。pynput不在なら False。"""

@@ -119,6 +119,10 @@ CALIBRATION_RANDOMIZE = True  # キャリブレーション点の表示順をラ
 # キャリブレーション結果の保存先（1回やれば次回から自動読込でdotスキップ）
 CALIBRATION_FILE = os.path.join(os.path.expanduser("~"), ".gaze_control_calibration.json")
 
+# 再センタリング: 実行中に 'c' キーで「画面中央を見て」追加オフセットを自動補正。
+# 一定方向のバイアス（見ている点から常に同じ方向にずれる）をその場で打ち消す。
+RECENTER_SAMPLES = 18      # 平均に使う視線フレーム数（約0.6秒@30fps）
+
 # --- 可動域・距離適応 ---
 GAZE_RANGE_MULT = 1.0       # 可動域（ゲイン）倍率 — 大きいほど視線で広く届く（--rangeで上書き）
 DISTANCE_ADAPT = 0.0        # 距離適応の強さ (0=無効〜1=フル, --distance-adaptで上書き)

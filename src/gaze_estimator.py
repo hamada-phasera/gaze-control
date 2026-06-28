@@ -268,6 +268,38 @@ class GazeEstimator:
         self._offset_x = float(x)
         self._offset_y = float(y)
 
+    @property
+    def offset_x(self) -> float:
+        return self._offset_x
+
+    @property
+    def offset_y(self) -> float:
+        return self._offset_y
+
+    @staticmethod
+    def robust_mean_xy(
+        samples: List[Tuple[float, float]], trim: float = 0.2
+    ) -> Optional[Tuple[float, float]]:
+        """(x, y) サンプル列の外れ値に強い平均を返す。
+
+        各軸を中央値からの距離でソートし、上下 trim 割合を捨てた平均
+        （トリム平均）。瞬き・サッケードの外れ値を落とすため。空なら None。
+        """
+        if not samples:
+            return None
+        arr = np.asarray(samples, dtype=float)
+        n = len(arr)
+        if n < 5:
+            return (float(np.median(arr[:, 0])), float(np.median(arr[:, 1])))
+
+        def _trimmed(col: np.ndarray) -> float:
+            med = np.median(col)
+            order = np.argsort(np.abs(col - med))
+            keep = max(1, int(round(n * (1.0 - trim))))
+            return float(np.mean(col[order[:keep]]))
+
+        return (_trimmed(arr[:, 0]), _trimmed(arr[:, 1]))
+
     @staticmethod
     def _eye_weights(dominant: str, weight: float) -> Tuple[float, float]:
         """(左目重み, 右目重み) を返す。weight=0.5で均等、1.0で利き目のみ。"""
@@ -623,6 +655,9 @@ class GazeEstimator:
             # どの利き目設定で取ったかを保存し、読み込み時に必ず一致させる（食い違い防止）
             "dominant_eye": self._dominant_eye,
             "dominant_weight": float(self._dominant_weight),
+            # 再センタリングで得た追加オフセット（再起動後も維持）
+            "offset_x": float(self._offset_x),
+            "offset_y": float(self._offset_y),
         }
         try:
             with open(path, "w") as f:
@@ -649,6 +684,9 @@ class GazeEstimator:
             # 利き目設定はキャリブが正。フィールドが無い旧ファイルは「両目」とみなす。
             self._dominant_eye = data.get("dominant_eye", "both")
             self._dominant_weight = float(data.get("dominant_weight", 0.5))
+            # 再センタリングのオフセット（無い旧ファイルは現在値を維持）
+            self._offset_x = float(data.get("offset_x", self._offset_x))
+            self._offset_y = float(data.get("offset_y", self._offset_y))
             return True
         except Exception:  # noqa: BLE001
             return False

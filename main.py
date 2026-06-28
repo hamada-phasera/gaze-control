@@ -4,7 +4,7 @@ import argparse
 import os
 import sys
 import time
-from typing import Optional, Tuple
+from typing import List, Optional, Tuple
 
 import cv2
 import numpy as np
@@ -152,6 +152,10 @@ class GazeControlApp:
         # 3秒間目を閉じる→リセット のジェスチャ
         self._eyes_closed = EyesClosedTrigger()
 
+        # 再センタリング: 'c' キーで画面中央を見て追加オフセットを自動補正。
+        # Noneのとき非収集。リストのときサンプル収集中。
+        self._recenter_samples: Optional[List[Tuple[float, float]]] = None
+
         # 形状スナップ＋磁石スナップ（近くのボタン/カードに吸着＋形変形）— 仮想カーソルモードのみ
         self._shape_snap: Optional[AccessibilitySnap] = None
         self._shape_query_t = 0.0
@@ -254,6 +258,44 @@ class GazeControlApp:
         self._eyes_closed.reset()
         print("リセット: 頭部基準とカーソル位置を再設定しました")
 
+    def _start_recenter(self) -> None:
+        """再センタリング開始: 画面中央を見てもらい追加オフセットを測る。"""
+        if not self._estimator.is_calibrated:
+            print("再センタリング: 先にキャリブレーションが必要です（--recalibrate）")
+            return
+        self._recenter_samples = []
+        print(
+            f"再センタリング中… 画面の『中央』を見続けてください "
+            f"（{config.RECENTER_SAMPLES}フレーム収集）"
+        )
+
+    def _collect_recenter(self, x: float, y: float) -> None:
+        """再センタリング収集中の1フレーム分。十分集まったら確定する。"""
+        if self._recenter_samples is None:
+            return
+        self._recenter_samples.append((x, y))
+        if len(self._recenter_samples) < config.RECENTER_SAMPLES:
+            return
+
+        center = (self._screen_w / 2.0, self._screen_h / 2.0)
+        mean = self._estimator.robust_mean_xy(self._recenter_samples)
+        self._recenter_samples = None
+        if mean is None:
+            print("再センタリング: 有効なサンプルが取れませんでした")
+            return
+
+        # 観測平均が中央に来るよう、追加オフセットをインクリメンタルに更新
+        dx = center[0] - mean[0]
+        dy = center[1] - mean[1]
+        new_x = self._estimator.offset_x + dx
+        new_y = self._estimator.offset_y + dy
+        self._estimator.set_offset(new_x, new_y)
+        self._estimator.save_calibration(self._calib_file)
+        print(
+            f"再センタリング完了: オフセット=({new_x:.0f}, {new_y:.0f}) "
+            f"[補正 Δ=({dx:+.0f}, {dy:+.0f})] を保存しました"
+        )
+
     def _apply_snap(self, fx: float, fy: float) -> Tuple[float, float]:
         """近傍のUI要素に吸着（磁石）＋形状変形する。
 
@@ -340,11 +382,12 @@ class GazeControlApp:
         if hotkeys_active:
             print(
                 f"ホットキー: '{config.HOTKEY_TOGGLE_PREVIEW}'=プレビュー表示切替 / "
-                f"'r'=リセット / '{config.HOTKEY_QUIT}' または ESC=終了"
+                f"'r'=リセット / 'c'=再センタリング(中央を見て補正) / "
+                f"'{config.HOTKEY_QUIT}' または ESC=終了"
             )
         else:
             reason = "--no-hotkeys 指定" if self._no_hotkeys else "pynput未導入/利用不可"
-            print(f"注意: グローバルホットキー無効（{reason}）。プレビューウィンドウのキー(q/ESC)で操作します")
+            print(f"注意: グローバルホットキー無効（{reason}）。プレビュー窓のキー(q/ESC=終了, r=リセット, c=再センタリング)で操作します")
             self._preview_visible = True
 
         if not self._preview_visible:
@@ -386,6 +429,10 @@ class GazeControlApp:
                     print("3秒閉眼を検出 → リセット")
                     self._do_reset()
 
+                # 再センタリング収集中なら生の視線出力を集める（注視ロック/吸着の前）
+                if self._recenter_samples is not None:
+                    self._collect_recenter(result.x, result.y)
+
                 if self._vcursor is not None:
                     # 仮想カーソルモード: 注視で確定した点へ。近くにUI要素があれば吸着＋形変形。
                     fx, fy, _ = self._fixation.update(result.x, result.y, time.time())
@@ -421,6 +468,10 @@ class GazeControlApp:
             if hotkeys_active and self._hotkeys.poll_reset():
                 self._do_reset()
 
+            # 再センタリング（ホットキー）
+            if hotkeys_active and self._hotkeys.poll_recenter():
+                self._start_recenter()
+
             # プレビュー描画（表示時のみ。窓を見ると視線が引っ張られるため既定は非表示）
             if self._preview_visible:
                 self._show_preview(frame, result)
@@ -429,6 +480,8 @@ class GazeControlApp:
                     break
                 elif key == ord("r"):  # リセット
                     self._do_reset()
+                elif key == ord("c"):  # 再センタリング（中央を見てオフセット補正）
+                    self._start_recenter()
 
             # FPS計算
             frame_count += 1
