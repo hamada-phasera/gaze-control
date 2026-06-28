@@ -8,8 +8,45 @@ from src.virtual_cursor import (
     advance_cursor,
     exp_smooth,
     make_cursor_sprite,
+    make_rect_sprite,
     transit_scale,
 )
+
+
+class TestMakeRectSprite:
+    """ボタン/カード形の角丸グロースプライト"""
+
+    def test_shape_includes_padding(self) -> None:
+        pad = 14
+        sprite = make_rect_sprite(200, 60, (0, 200, 255), pad=pad)
+        assert sprite.shape == (60 + 2 * pad, 200 + 2 * pad, 4)
+        assert sprite.dtype == np.uint8
+
+    def test_center_opaque_corners_transparent(self) -> None:
+        pad = 14
+        sprite = make_rect_sprite(200, 60, (0, 200, 255), pad=pad, max_alpha=0.55)
+        alpha = sprite[..., 3]
+        cy, cx = sprite.shape[0] // 2, sprite.shape[1] // 2
+        assert alpha[cy, cx] >= 120          # 中央は不透明
+        assert alpha[0, 0] <= 10             # 角（パッド外）は透明
+
+    def test_rgb_color(self) -> None:
+        sprite = make_rect_sprite(80, 40, (10, 120, 240))
+        assert np.all(sprite[..., 0] == 10)
+        assert np.all(sprite[..., 1] == 120)
+        assert np.all(sprite[..., 2] == 240)
+
+    def test_tiny_size_safe(self) -> None:
+        sprite = make_rect_sprite(2, 2, (0, 0, 0))
+        assert sprite.shape[2] == 4
+        assert sprite.dtype == np.uint8
+
+    def test_square_is_symmetric(self) -> None:
+        sprite = make_rect_sprite(100, 100, (0, 200, 255), pad=14)
+        alpha = sprite[..., 3].astype(int)
+        cy, cx = sprite.shape[0] // 2, sprite.shape[1] // 2
+        d = 40
+        assert abs(alpha[cy, cx - d] - alpha[cy, cx + d]) <= 4
 
 
 class TestTransitScale:

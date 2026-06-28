@@ -14,12 +14,14 @@ import pyautogui
 pyautogui.FAILSAFE = True
 
 from src import config
+from src.accessibility_snap import AccessibilitySnap
 from src.calibration import CalibrationOverlay
 from src.camera_stream import CameraStream
 from src.cursor_controller import CursorController
 from src.gaze_estimator import GazeEstimator, GazeResult
 from src.fixation import FixationTracker
 from src.gaze_pointer import GazePointer
+from src.gestures import EyesClosedTrigger, is_eye_closed
 from src.hotkeys import HotkeyController
 from src.virtual_cursor import VirtualCursorOverlay
 
@@ -60,6 +62,7 @@ class GazeControlApp:
         distance_adapt: float = config.DISTANCE_ADAPT,
         calib_file: str = config.CALIBRATION_FILE,
         recalibrate: bool = False,
+        snap_shape: bool = False,
     ) -> None:
         self._debug = debug
         self._skip_calib = skip_calib
@@ -115,6 +118,18 @@ class GazeControlApp:
             toggle_char=config.HOTKEY_TOGGLE_PREVIEW,
             quit_chars=(config.HOTKEY_QUIT,),
         )
+
+        # 3秒間目を閉じる→リセット のジェスチャ
+        self._eyes_closed = EyesClosedTrigger()
+
+        # 形状スナップ（カーソルをボタン/カードの形に変形）— 仮想カーソルモードでのみ
+        self._shape_snap: Optional[AccessibilitySnap] = None
+        self._shape_query_t = 0.0
+        if snap_shape and virtual_cursor:
+            if AccessibilitySnap.is_available():
+                self._shape_snap = AccessibilitySnap()
+            else:
+                print("注意: 形状スナップには pyobjc が必要です（無効化）")
 
         # カメラ（生キャプチャ or スレッド化ラッパー）
         self._cap: Optional[object] = None
@@ -201,7 +216,28 @@ class GazeControlApp:
         self._estimator.reset_runtime()
         if self._fixation is not None:
             self._fixation.reset()
+        self._eyes_closed.reset()
         print("リセット: 頭部基準とカーソル位置を再設定しました")
+
+    def _update_shape_snap(self, x: float, y: float) -> None:
+        """カーソル下のUI要素矩形を（間引いて）問い合わせ、仮想カーソルの形を更新する。"""
+        if self._shape_snap is None or self._vcursor is None:
+            return
+        now = time.time()
+        if now - self._shape_query_t < config.SNAP_SHAPE_QUERY_INTERVAL:
+            return
+        self._shape_query_t = now
+        try:
+            frame = self._shape_snap.element_frame_at(x, y)
+        except Exception:  # noqa: BLE001
+            frame = None
+        if frame is not None:
+            ecx, ecy, ew, eh = frame
+            if (config.SNAP_SHAPE_MIN_SIZE <= ew <= config.SNAP_SHAPE_MAX_SIZE
+                    and config.SNAP_SHAPE_MIN_SIZE <= eh <= config.SNAP_SHAPE_MAX_SIZE):
+                self._vcursor.set_shape(ecx, ecy, ew, eh)
+                return
+        self._vcursor.clear_shape()
 
     def _run_calibration(self) -> bool:
         """キャリブレーションを実行"""
@@ -295,12 +331,19 @@ class GazeControlApp:
             result = self._estimator.process_frame(frame)
 
             if result is not None:
+                # 3秒間目を閉じる → リセット
+                closed = is_eye_closed(result.left_ear, result.right_ear, result.blink_score)
+                if self._eyes_closed.update(closed, time.time()):
+                    print("3秒閉眼を検出 → リセット")
+                    self._do_reset()
+
                 if self._vcursor is not None:
                     # 仮想カーソルモード: 注視（dwell+履歴重心）で確定した点だけへ移す。
                     # 視線移動中・ノイズ中は保持し、着いたら留まる（途中の距離情報は捨てる）。
                     fx, fy, _ = self._fixation.update(result.x, result.y, time.time())
                     self._vcursor.update_position(fx, fy, visible=True)
                     self._pointer.update_position(fx, fy)
+                    self._update_shape_snap(fx, fy)
                 else:
                     # 通常モード: OSの実カーソルを制御
                     clicked = self._controller.update(
@@ -609,6 +652,11 @@ def parse_args() -> argparse.Namespace:
         default=config.CALIBRATION_FILE,
         help="キャリブ保存ファイルのパス",
     )
+    parser.add_argument(
+        "--snap-shape",
+        action="store_true",
+        help="注視先のボタン/カードの形にカーソルを変形する（macOS Accessibility, 実験的）",
+    )
     return parser.parse_args()
 
 
@@ -634,6 +682,7 @@ def main() -> None:
         distance_adapt=args.distance_adapt,
         recalibrate=args.recalibrate,
         calib_file=args.calib_file,
+        snap_shape=args.snap_shape,
     )
 
     try:

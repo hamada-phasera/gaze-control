@@ -188,6 +188,18 @@ SNAP_ENABLED = True            # UI要素スナップ有効/無効
 SNAP_RADIUS = 80.0             # スナップ検索半径 (px)
 SNAP_SEARCH_STEP = 10          # グリッド検索ステップ (px)
 
+# --- 形状スナップ（カーソルがボタン/カードの形に変化）---
+SNAP_SHAPE_QUERY_INTERVAL = 0.12  # AX要素問い合わせの間隔 (秒) — 毎フレームは重いので間引く
+SNAP_SHAPE_PAD = 14               # 要素矩形の外側に足すグロー余白 (px)
+SNAP_SHAPE_CORNER_RATIO = 0.28    # 角丸半径 / min(w,h)
+SNAP_SHAPE_BLUR_RATIO = 0.5       # 矩形グローのブラー幅（パッド比）
+SNAP_SHAPE_MAX_OPACITY = 0.55     # 形状ハイライトの最大不透明度
+SNAP_SHAPE_MIN_SIZE = 24          # これ未満の小さな要素にはスナップしない (px)
+SNAP_SHAPE_MAX_SIZE = 900         # これを超える巨大要素にはスナップしない (px)
+
+# --- 長い閉眼ジェスチャ（リセット）---
+EYES_CLOSED_RESET_SEC = 3.0    # この秒数だけ目を閉じ続けるとリセット発火
+
 # --- 仮想カーソル設定（gaze駆動・OSカーソルとは独立した表示専用カーソル）---
 # 視線で動かす「仮想カーソル」を、広範囲ブラーの円形グローとして
 # 透明・クリックスルーのオーバーレイに描画する。OSの実マウスには一切干渉しない。

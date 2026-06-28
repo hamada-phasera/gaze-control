@@ -92,6 +92,64 @@ def make_cursor_sprite(
     return rgba
 
 
+def make_rect_sprite(
+    w: int,
+    h: int,
+    color_rgb: Tuple[int, int, int],
+    pad: int = config.SNAP_SHAPE_PAD,
+    corner_ratio: float = config.SNAP_SHAPE_CORNER_RATIO,
+    blur_ratio: float = config.SNAP_SHAPE_BLUR_RATIO,
+    max_alpha: float = config.SNAP_SHAPE_MAX_OPACITY,
+) -> np.ndarray:
+    """ボタン/カードの形に合わせた角丸グローのスプライトを RGBA で生成する。
+
+    内側 (w, h) の角丸矩形に外側 pad ぶんのブラーグローを付ける。
+
+    Returns:
+        (h + 2*pad, w + 2*pad, 4) uint8 の RGBA。チャンネル順は R, G, B, A。
+    """
+    import cv2
+
+    w = max(2, int(w))
+    h = max(2, int(h))
+    pad = max(2, int(pad))
+    canvas_w = w + 2 * pad
+    canvas_h = h + 2 * pad
+
+    r = int(max(1, round(min(w, h) * max(0.0, corner_ratio))))
+    r = min(r, min(w, h) // 2) if min(w, h) >= 2 else 1
+    r = max(1, r)
+
+    x0, y0 = pad, pad
+    x1, y1 = pad + w - 1, pad + h - 1
+
+    mask = np.zeros((canvas_h, canvas_w), dtype=np.float32)
+    cv2.rectangle(mask, (x0 + r, y0), (x1 - r, y1), 1.0, -1)
+    cv2.rectangle(mask, (x0, y0 + r), (x1, y1 - r), 1.0, -1)
+    for (cx, cy) in ((x0 + r, y0 + r), (x1 - r, y0 + r), (x0 + r, y1 - r), (x1 - r, y1 - r)):
+        cv2.circle(mask, (cx, cy), r, 1.0, -1, lineType=cv2.LINE_AA)
+
+    ksize = int(pad * 2 * max(0.1, blur_ratio))
+    if ksize % 2 == 0:
+        ksize += 1
+    ksize = max(3, ksize)
+    sigma = max(1.0, pad * blur_ratio)
+    glow = cv2.GaussianBlur(mask, (ksize, ksize), sigmaX=sigma, sigmaY=sigma)
+    peak = float(glow.max())
+    if peak > 0:
+        glow = glow / peak
+
+    alpha = np.clip(np.maximum(mask, glow) * float(max_alpha), 0.0, 1.0)
+
+    rgba = np.zeros((canvas_h, canvas_w, 4), dtype=np.uint8)
+    cr, cg, cb = (int(c) for c in color_rgb)
+    rgba[..., 0] = cr
+    rgba[..., 1] = cg
+    rgba[..., 2] = cb
+    rgba[..., 3] = (alpha * 255.0).astype(np.uint8)
+    return rgba
+
+
 def exp_smooth(
     current: float,
     target: float,
@@ -179,7 +237,11 @@ _IDX_X = 0          # 目標 x (px)
 _IDX_Y = 1          # 目標 y (px)
 _IDX_VISIBLE = 2    # 1.0=表示, 0.0=非表示, 負値=シャットダウン要求
 _IDX_DWELL = 3      # dwell進捗 0.0〜1.0（将来用・現状は表示のみ）
-_SHARED_LEN = 4
+_IDX_EX = 4         # スナップ要素の中心 x（0=要素なし）
+_IDX_EY = 5         # スナップ要素の中心 y
+_IDX_EW = 6         # スナップ要素の幅（0=要素なし＝円のまま）
+_IDX_EH = 7         # スナップ要素の高さ
+_SHARED_LEN = 8
 
 _SHUTDOWN = -1.0
 
@@ -217,11 +279,16 @@ def _qt_overlay_main(shared, params: dict) -> None:
         max_alpha=params["max_opacity"],
     )
     h, w = sprite.shape[:2]
-    buf = np.ascontiguousarray(sprite)  # QImage がバッファを参照するため保持し続ける
-    qimg = QtGui.QImage(
-        buf.data, w, h, 4 * w, QtGui.QImage.Format_RGBA8888
-    ).copy()
-    pixmap = QtGui.QPixmap.fromImage(qimg)
+
+    def to_pixmap(rgba):
+        rgba = np.ascontiguousarray(rgba)
+        ih, iw = rgba.shape[:2]
+        img = QtGui.QImage(
+            rgba.data, iw, ih, 4 * iw, QtGui.QImage.Format_RGBA8888
+        ).copy()
+        return QtGui.QPixmap.fromImage(img)
+
+    pixmap = to_pixmap(sprite)
 
     class _Overlay(QtWidgets.QWidget):
         def __init__(self) -> None:
@@ -261,8 +328,44 @@ def _qt_overlay_main(shared, params: dict) -> None:
                 painter.drawPixmap(target_rect, self._pixmap, src_rect)
             painter.end()
 
+    class _RectHighlight(QtWidgets.QWidget):
+        """スナップ要素を覆う角丸グロー（ボタン/カードの形のハイライト）。"""
+
+        def __init__(self) -> None:
+            super().__init__()
+            self.setWindowFlags(
+                QtCore.Qt.FramelessWindowHint
+                | QtCore.Qt.WindowStaysOnTopHint
+                | QtCore.Qt.Tool
+                | QtCore.Qt.WindowTransparentForInput
+            )
+            self.setAttribute(QtCore.Qt.WA_TranslucentBackground, True)
+            self.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents, True)
+            self.setAttribute(QtCore.Qt.WA_ShowWithoutActivating, True)
+            self._pixmap = None
+            self._opacity = 0.0
+
+        def set_pixmap(self, pix) -> None:
+            self._pixmap = pix
+            self.resize(pix.width(), pix.height())
+
+        def set_opacity(self, value: float) -> None:
+            self._opacity = value
+
+        def paintEvent(self, _event) -> None:  # noqa: N802
+            if self._pixmap is None:
+                return
+            painter = QtGui.QPainter(self)
+            painter.setRenderHint(QtGui.QPainter.SmoothPixmapTransform, True)
+            painter.setOpacity(max(0.0, min(1.0, self._opacity)))
+            painter.drawPixmap(0, 0, self._pixmap)
+            painter.end()
+
     overlay = _Overlay()
     overlay.show()
+
+    rect_hl = _RectHighlight()
+    rect_hl.hide()
 
     half_w = w / 2.0
     half_h = h / 2.0
@@ -278,13 +381,23 @@ def _qt_overlay_main(shared, params: dict) -> None:
     # スケール基準: 速度キャップがあればその1ティック上限、無ければ概算
     scale_ref = max_step if max_step > 0 else max(2.0, (screen_w or 1920.0) * tick_dt * 6.0)
 
-    state = {"x": float(shared[_IDX_X]), "y": float(shared[_IDX_Y]), "scale": 1.0}
+    color = tuple(params["color"])
+    state = {
+        "x": float(shared[_IDX_X]), "y": float(shared[_IDX_Y]),
+        "scale": 1.0, "snap": 0.0,
+        "rect_size": (0, 0), "rect_pix": None,
+        "rx": float(shared[_IDX_X]), "ry": float(shared[_IDX_Y]),
+    }
 
     def tick() -> None:
         with shared.get_lock():
             tx = float(shared[_IDX_X])
             ty = float(shared[_IDX_Y])
             vis = float(shared[_IDX_VISIBLE])
+            ex = float(shared[_IDX_EX])
+            ey = float(shared[_IDX_EY])
+            ew = float(shared[_IDX_EW])
+            eh = float(shared[_IDX_EH])
 
         if vis == _SHUTDOWN:
             app.quit()
@@ -306,7 +419,34 @@ def _qt_overlay_main(shared, params: dict) -> None:
         state["scale"] = exp_smooth(state["scale"], target_scale, scale_resp, tick_dt)
         overlay.set_scale(state["scale"])
 
-        target_op = max_opacity if vis >= 0.5 else 0.0
+        # --- 形状スナップ（ボタン/カードの矩形へ変形）---
+        snapped = ew >= 1.0 and eh >= 1.0
+        state["snap"] = exp_smooth(state["snap"], 1.0 if snapped else 0.0, 0.25, tick_dt)
+        snap_amt = state["snap"]
+        if snapped:
+            size = (int(ew), int(eh))
+            if size != state["rect_size"]:
+                state["rect_pix"] = to_pixmap(make_rect_sprite(size[0], size[1], color))
+                state["rect_size"] = size
+                rect_hl.set_pixmap(state["rect_pix"])
+            state["rx"] = exp_smooth(state["rx"], ex, 0.5, tick_dt)
+            state["ry"] = exp_smooth(state["ry"], ey, 0.5, tick_dt)
+            pw, ph = rect_hl.width(), rect_hl.height()
+            rect_hl.move(int(round(state["rx"] - pw / 2.0)), int(round(state["ry"] - ph / 2.0)))
+
+        base_visible = 1.0 if vis >= 0.5 else 0.0
+        rect_op = config.SNAP_SHAPE_MAX_OPACITY * snap_amt * base_visible
+        if state["rect_pix"] is not None:
+            rect_hl.set_opacity(rect_op)
+            if rect_op > 0.01:
+                if not rect_hl.isVisible():
+                    rect_hl.show()
+                rect_hl.update()
+            elif rect_hl.isVisible():
+                rect_hl.hide()
+
+        # 円の不透明度（スナップ時は薄く）
+        target_op = max_opacity * base_visible * (1.0 - 0.6 * snap_amt)
         overlay.set_opacity(overlay._opacity + 0.25 * (target_op - overlay._opacity))
         overlay.update()
 
@@ -370,12 +510,10 @@ class VirtualCursorOverlay:
         import multiprocessing as mp
 
         try:
-            self._shared = mp.Array("d", [
-                self._screen_width / 2.0,
-                self._screen_height / 2.0,
-                0.0,
-                0.0,
-            ])
+            init = [0.0] * _SHARED_LEN
+            init[_IDX_X] = self._screen_width / 2.0
+            init[_IDX_Y] = self._screen_height / 2.0
+            self._shared = mp.Array("d", init)
             self._proc = mp.Process(
                 target=_run_overlay_process,
                 args=(self._shared, self._params),
@@ -401,6 +539,20 @@ class VirtualCursorOverlay:
             self._shared[_IDX_Y] = float(y)
             self._shared[_IDX_VISIBLE] = 1.0 if visible else 0.0
             self._shared[_IDX_DWELL] = float(dwell_progress)
+
+    def set_shape(self, ex: float, ey: float, ew: float, eh: float) -> None:
+        """スナップ先のUI要素矩形を設定する。ew/eh<=0 で解除（円に戻る）。"""
+        if self._shared is None:
+            return
+        with self._shared.get_lock():
+            self._shared[_IDX_EX] = float(ex)
+            self._shared[_IDX_EY] = float(ey)
+            self._shared[_IDX_EW] = float(ew)
+            self._shared[_IDX_EH] = float(eh)
+
+    def clear_shape(self) -> None:
+        """形状スナップを解除する。"""
+        self.set_shape(0.0, 0.0, 0.0, 0.0)
 
     def hide(self) -> None:
         """一時的に非表示にする（フェードアウト）。"""
