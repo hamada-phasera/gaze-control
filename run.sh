@@ -17,10 +17,11 @@ if [ ! -x ".venv/bin/python" ]; then
   ./.venv/bin/python -m pip install -r requirements.txt
 fi
 
-# 引数が無ければ推奨プリセットで起動。引数があればそれをそのまま渡す。
-if [ "$#" -eq 0 ]; then
-  set -- --virtual-cursor --show-window --debug --no-hotkeys --snap-shape \
-        --sensitivity 1.0 --range 1.5 --distance-adapt 0.5 --dwell-time 0.3 --max-speed 700
-fi
+# 推奨プリセット＋渡された引数（後勝ちで上書き）。
+#   ./run.sh                       # プリセットそのまま
+#   ./run.sh --hold-radius 160     # プリセット + ここを上書き（固定を強く）
+#   ./run.sh --sensitivity 1.5     # 感度だけ変更、他はプリセット
+PRESET=(--virtual-cursor --show-window --debug --no-hotkeys --snap-shape \
+        --sensitivity 1.0 --range 1.5 --distance-adapt 0.5 --dwell-time 0.3 --max-speed 700)
 
-exec ./.venv/bin/python main.py "$@"
+exec ./.venv/bin/python main.py "${PRESET[@]}" "$@"
