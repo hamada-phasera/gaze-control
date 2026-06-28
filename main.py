@@ -65,6 +65,8 @@ class GazeControlApp:
         # プレビューウィンドウ: 既定で非表示（窓を見ると視線が引っ張られ制御が乱れるため）。
         # --debug または --show-window で初期表示、実行中は 'p' キーでトグルできる。
         self._preview_visible = debug or show_window
+        # プレビュー窓を初回表示時に画面中央上部（mac内蔵カメラ位置）へ配置するためのフラグ
+        self._preview_positioned = False
 
         # スクリーンサイズ取得
         self._screen_w, self._screen_h = get_screen_size()
@@ -300,6 +302,7 @@ class GazeControlApp:
                 self._preview_visible = not self._preview_visible
                 if not self._preview_visible:
                     cv2.destroyWindow(config.DEBUG_WINDOW_NAME)
+                    self._preview_positioned = False  # 再表示時に再び中央上部へ
                 print(f"プレビュー: {'表示' if self._preview_visible else '非表示'}")
 
             # リセット（ホットキー）
@@ -332,12 +335,26 @@ class GazeControlApp:
         self._cleanup()
 
     def _show_preview(self, frame: np.ndarray, result: Optional[GazeResult]) -> None:
-        """ミニプレビューを表示する。--debug時は詳細オーバーレイ、通常は小さな素のフレーム。"""
+        """ミニプレビューを表示する。--debug時は詳細オーバーレイ、通常は小さな素のフレーム。
+
+        初回表示時に画面中央上部（mac内蔵カメラの位置）へ配置する。
+        """
         if self._debug:
             self._draw_debug(frame, result)
+            win_w = 640
         else:
             small = cv2.resize(frame, (480, 270)) if frame.shape[1] > 480 else frame
             cv2.imshow(config.DEBUG_WINDOW_NAME, small)
+            win_w = 480
+
+        # 初回のみ: 画面中央上部に移動（mac内蔵カメラ位置に合わせる）
+        if not self._preview_positioned:
+            x = max(0, (self._screen_w - win_w) // 2)
+            try:
+                cv2.moveWindow(config.DEBUG_WINDOW_NAME, x, 0)
+            except cv2.error:
+                pass
+            self._preview_positioned = True
 
     def _draw_debug(self, frame: np.ndarray, result: Optional[GazeResult]) -> None:
         """デバッグ情報をフレームに描画して表示"""
