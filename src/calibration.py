@@ -214,6 +214,107 @@ class CalibrationOverlay:
 
         return self._success
 
+    def run_sweep(self) -> bool:
+        """一周なぞりキャリブ — ドットを画面の縁に沿って動かし、目で追ってもらう。
+
+        デスクトップ全域（隅・縁・下端）を自然にカバーし、視線の可動範囲を取得する。
+        各ウェイポイントへスムーズに移動→短く滞留して収集、を繰り返す。
+        """
+        self._gaze_points.clear()
+        self._screen_points.clear()
+        self._completed = False
+        self._success = False
+
+        waypoints = self._generate_perimeter_waypoints()
+
+        cv2.namedWindow(self.WINDOW_NAME, cv2.WINDOW_NORMAL)
+        cv2.setWindowProperty(self.WINDOW_NAME, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+
+        # 説明
+        frame = np.zeros((self._screen_height, self._screen_width, 3), dtype=np.uint8)
+        self._put_text_centered(
+            frame, "Follow the moving dot around the screen",
+            (self._screen_width // 2, self._screen_height // 2 - 40), scale=1.3,
+        )
+        self._put_text_centered(
+            frame, "Keep your eyes on it. Press ESC to cancel.",
+            (self._screen_width // 2, self._screen_height // 2 + 40), scale=0.9,
+        )
+        cv2.imshow(self.WINDOW_NAME, frame)
+        if self._wait_key(2000):
+            cv2.destroyWindow(self.WINDOW_NAME)
+            return False
+
+        prev = (self._screen_width / 2.0, self._screen_height / 2.0)
+        total = len(waypoints)
+        for i, (tx, ty) in enumerate(waypoints):
+            # 前の点から滑らかに移動（スムーズパスートで目を誘導）
+            steps = 14
+            for s in range(1, steps + 1):
+                a = s / steps
+                cx = prev[0] + (tx - prev[0]) * a
+                cy = prev[1] + (ty - prev[1]) * a
+                disp = self._draw_dot(cx, cy, f"{i + 1}/{total}")
+                cv2.imshow(self.WINDOW_NAME, disp)
+                if (cv2.waitKey(22) & 0xFF) == 27:
+                    cv2.destroyWindow(self.WINDOW_NAME)
+                    return False
+            prev = (tx, ty)
+
+            # 滞留して収集
+            gaze_samples: List[Tuple[float, float]] = []
+            start_time = time.time()
+            while time.time() - start_time < config.CALIBRATION_DURATION:
+                gaze = self._gaze_callback()
+                if gaze is not None:
+                    gaze_samples.append(gaze)
+                remaining = config.CALIBRATION_DURATION - (time.time() - start_time)
+                disp = self._draw_dot(tx, ty, f"{remaining:.1f}s")
+                cv2.imshow(self.WINDOW_NAME, disp)
+                if (cv2.waitKey(33) & 0xFF) == 27:
+                    cv2.destroyWindow(self.WINDOW_NAME)
+                    self._completed = True
+                    return False
+
+            filtered = self._filter_outliers(gaze_samples)
+            if filtered is not None:
+                self._gaze_points.append(filtered)
+                self._screen_points.append((tx, ty))
+
+        cv2.destroyWindow(self.WINDOW_NAME)
+        self._completed = True
+        self._success = len(self._gaze_points) >= config.CALIBRATION_MIN_POINTS
+        return self._success
+
+    def _draw_dot(self, x: float, y: float, label: str = "") -> np.ndarray:
+        """黒背景に緑のターゲットドットを描いたフレームを返す。"""
+        frame = np.zeros((self._screen_height, self._screen_width, 3), dtype=np.uint8)
+        ix, iy = int(x), int(y)
+        cv2.circle(frame, (ix, iy), 18, (0, 255, 0), 2)
+        cv2.circle(frame, (ix, iy), 4, (0, 255, 0), -1)
+        cv2.line(frame, (ix - 28, iy), (ix + 28, iy), (0, 180, 0), 1)
+        cv2.line(frame, (ix, iy - 28), (ix, iy + 28), (0, 180, 0), 1)
+        if label:
+            self._put_text_centered(frame, label, (ix, iy + 44), scale=0.6, color=(0, 200, 200))
+        return frame
+
+    def _generate_perimeter_waypoints(self) -> List[Tuple[float, float]]:
+        """縁を一周＋中央・内側の収集点を、移動順に並べて返す。"""
+        m = config.CALIBRATION_MARGIN
+        w, h = self._screen_width, self._screen_height
+        x0, y0 = w * m, h * m
+        x1, y1 = w * (1 - m), h * (1 - m)
+        xm, ym = w * 0.5, h * 0.5
+        return [
+            (x0, y0), (xm, y0), (x1, y0),        # 上辺 左→右
+            (x1, ym),                            # 右辺 中
+            (x1, y1), (xm, y1), (x0, y1),        # 下辺 右→左
+            (x0, ym),                            # 左辺 中
+            (xm, ym),                            # 中央
+            (w * 0.3, h * 0.3), (w * 0.7, h * 0.3),  # 内側
+            (w * 0.7, h * 0.7), (w * 0.3, h * 0.7),
+        ]
+
     def _wait_key(self, ms: int) -> bool:
         """指定ミリ秒待機。ESCが押されたらTrueを返す。"""
         key = cv2.waitKey(ms) & 0xFF

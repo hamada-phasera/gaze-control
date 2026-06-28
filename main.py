@@ -67,6 +67,7 @@ class GazeControlApp:
         v_gain: float = config.VERTICAL_GAIN,
         down_boost: float = config.VERTICAL_DOWN_BOOST,
         snap_radius: float = config.SNAP_MAGNET_RADIUS,
+        sweep_calib: bool = False,
     ) -> None:
         self._debug = debug
         self._skip_calib = skip_calib
@@ -77,6 +78,7 @@ class GazeControlApp:
         self._no_hotkeys = no_hotkeys
         self._calib_file = calib_file
         self._recalibrate = recalibrate
+        self._sweep_calib = sweep_calib
 
         # プレビューウィンドウ: 既定で非表示（窓を見ると視線が引っ張られ制御が乱れるため）。
         # --debug または --show-window で初期表示、実行中は 'p' キーでトグルできる。
@@ -259,14 +261,18 @@ class GazeControlApp:
         return (fx, fy)
 
     def _run_calibration(self) -> bool:
-        """キャリブレーションを実行"""
+        """キャリブレーションを実行（--sweep-calib で一周なぞり方式）"""
         overlay = CalibrationOverlay(
             screen_width=self._screen_w,
             screen_height=self._screen_h,
             gaze_callback=self._get_gaze_ratio_for_calibration,
         )
 
-        success = overlay.run()
+        if self._sweep_calib:
+            print("一周なぞりキャリブ: 動くドットを目で追ってください")
+            success = overlay.run_sweep()
+        else:
+            success = overlay.run()
 
         if success:
             calib_ok = self._estimator.compute_calibration(
@@ -671,6 +677,11 @@ def parse_args() -> argparse.Namespace:
         help="保存済みキャリブを無視して再キャリブする",
     )
     parser.add_argument(
+        "--sweep-calib",
+        action="store_true",
+        help="一周なぞりキャリブ（ドットを画面の縁に沿って追う方式）。隅・下端をしっかり取得",
+    )
+    parser.add_argument(
         "--calib-file",
         type=str,
         default=config.CALIBRATION_FILE,
@@ -729,6 +740,7 @@ def main() -> None:
         v_gain=args.v_gain,
         down_boost=args.down_boost,
         snap_radius=args.snap_radius,
+        sweep_calib=args.sweep_calib,
     )
 
     try:

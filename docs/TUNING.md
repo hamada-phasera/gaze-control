@@ -46,6 +46,14 @@ python main.py --precision-mode                        # 眉上げで精密モ�
 
 `--snap-shape` で、近く（`--snap-radius` 内）のボタン/カード/ウィンドウにカーソルが**吸い付き**、その形に変形する。吸着が強すぎ/弱すぎなら `--snap-radius` を調整。
 
+### 一周なぞりキャリブ `--sweep-calib`
+
+16個のdotを凝視する代わりに、**画面の縁に沿って動くドットを目で追う**方式。隅・縁・下端を
+自然にカバーするので、デスクトップ全域の視線範囲を取得でき、**下方向の精度**が上がりやすい。
+```bash
+./run.sh --sweep-calib --recalibrate
+```
+
 ### キャリブは1回でOK（毎回のdotが不要）
 
 初回にキャリブすると `~/.gaze_control_calibration.json` に保存され、次回から**自動読込**して dot を出しません。やり直したい時だけ `--recalibrate`。`--debug` 表示の `Dist:~XXcm` が **30〜50cm（OK表示）** になる位置で使うと最適です。
