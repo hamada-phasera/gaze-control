@@ -4,7 +4,38 @@ import numpy as np
 import pytest
 
 from src import config
-from src.virtual_cursor import advance_cursor, exp_smooth, make_cursor_sprite
+from src.virtual_cursor import (
+    advance_cursor,
+    exp_smooth,
+    make_cursor_sprite,
+    transit_scale,
+)
+
+
+class TestTransitScale:
+    """サイズ・イージング（移動中は縮み、静止で膨らむ）のテスト"""
+
+    def test_still_is_full_size(self) -> None:
+        assert transit_scale(0.0, 7.5, 0.45) == 1.0
+
+    def test_max_speed_shrinks_by_dip(self) -> None:
+        assert transit_scale(7.5, 7.5, 0.45) == pytest.approx(0.55)
+
+    def test_beyond_ref_clamped(self) -> None:
+        assert transit_scale(100.0, 7.5, 0.45) == pytest.approx(0.55)
+
+    def test_zero_dip_is_full_size(self) -> None:
+        assert transit_scale(7.5, 7.5, 0.0) == 1.0
+
+    def test_zero_ref_is_full_size(self) -> None:
+        assert transit_scale(5.0, 0.0, 0.45) == 1.0
+
+    def test_monotonic_decreasing(self) -> None:
+        prev = 1.0
+        for step in [0.0, 1.0, 2.0, 4.0, 7.5]:
+            s = transit_scale(step, 7.5, 0.45)
+            assert s <= prev + 1e-9
+            prev = s
 
 
 class TestMakeCursorSprite:

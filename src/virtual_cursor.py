@@ -159,6 +159,18 @@ def advance_cursor(
     return (nx, ny)
 
 
+def transit_scale(step_dist: float, ref_step: float, dip: float) -> float:
+    """移動量に応じたスケール係数を返す（移動中は縮み、静止で膨らむ）。
+
+    静止(step=0)で 1.0、ref_step 以上の速さで (1 - dip)。点と点の距離を
+    視覚的に目立たなくするための「サイズ・イージング」。
+    """
+    if ref_step <= 0.0 or dip <= 0.0:
+        return 1.0
+    m = min(1.0, step_dist / ref_step)
+    return 1.0 - dip * m
+
+
 # ---------------------------------------------------------------------------
 # オーバーレイ（Qt — 子プロセス側で実行）
 # ---------------------------------------------------------------------------
@@ -226,15 +238,27 @@ def _qt_overlay_main(shared, params: dict) -> None:
             self.resize(w, h)
             self._pixmap = pixmap
             self._opacity = 0.0
+            self._scale = 1.0
 
         def set_opacity(self, value: float) -> None:
             self._opacity = value
+
+        def set_scale(self, value: float) -> None:
+            self._scale = value
 
         def paintEvent(self, _event) -> None:  # noqa: N802 — Qt命名規約
             painter = QtGui.QPainter(self)
             painter.setRenderHint(QtGui.QPainter.SmoothPixmapTransform, True)
             painter.setOpacity(max(0.0, min(1.0, self._opacity)))
-            painter.drawPixmap(0, 0, self._pixmap)
+            s = self._scale
+            if s >= 0.999:
+                painter.drawPixmap(0, 0, self._pixmap)
+            else:
+                sw = w * s
+                sh = h * s
+                target_rect = QtCore.QRectF((w - sw) / 2.0, (h - sh) / 2.0, sw, sh)
+                src_rect = QtCore.QRectF(0.0, 0.0, float(w), float(h))
+                painter.drawPixmap(target_rect, self._pixmap, src_rect)
             painter.end()
 
     overlay = _Overlay()
@@ -249,8 +273,12 @@ def _qt_overlay_main(shared, params: dict) -> None:
     screen_w = float(params.get("screen_w", 0) or 0)
     screen_h = float(params.get("screen_h", 0) or 0)
     max_step = max_speed * tick_dt if max_speed > 0 else 0.0
+    scale_dip = float(params.get("scale_dip", 0.0))
+    scale_resp = float(params.get("scale_resp", 0.3))
+    # スケール基準: 速度キャップがあればその1ティック上限、無ければ概算
+    scale_ref = max_step if max_step > 0 else max(2.0, (screen_w or 1920.0) * tick_dt * 6.0)
 
-    state = {"x": float(shared[_IDX_X]), "y": float(shared[_IDX_Y])}
+    state = {"x": float(shared[_IDX_X]), "y": float(shared[_IDX_Y]), "scale": 1.0}
 
     def tick() -> None:
         with shared.get_lock():
@@ -262,14 +290,21 @@ def _qt_overlay_main(shared, params: dict) -> None:
             app.quit()
             return
 
+        prev_x, prev_y = state["x"], state["y"]
         nx, ny = advance_cursor(
-            state["x"], state["y"], tx, ty,
+            prev_x, prev_y, tx, ty,
             responsiveness, tick_dt, max_step,
             screen_w, screen_h, half_w, half_h,
         )
         state["x"] = nx
         state["y"] = ny
         overlay.move(int(round(nx - half_w)), int(round(ny - half_h)))
+
+        # サイズ・イージング: 移動量に応じて縮み、止まると膨らむ
+        step_dist = ((nx - prev_x) ** 2 + (ny - prev_y) ** 2) ** 0.5
+        target_scale = transit_scale(step_dist, scale_ref, scale_dip)
+        state["scale"] = exp_smooth(state["scale"], target_scale, scale_resp, tick_dt)
+        overlay.set_scale(state["scale"])
 
         target_op = max_opacity if vis >= 0.5 else 0.0
         overlay.set_opacity(overlay._opacity + 0.25 * (target_op - overlay._opacity))
@@ -302,6 +337,8 @@ class VirtualCursorOverlay:
         smoothing: float = config.VIRTUAL_CURSOR_SMOOTHING,
         tick_dt: float = config.VIRTUAL_CURSOR_TICK_DT,
         max_speed: float = config.VIRTUAL_CURSOR_MAX_SPEED,
+        scale_dip: float = config.VIRTUAL_CURSOR_SCALE_DIP,
+        scale_resp: float = config.VIRTUAL_CURSOR_SCALE_RESP,
     ) -> None:
         self._screen_width = screen_width
         self._screen_height = screen_height
@@ -316,6 +353,8 @@ class VirtualCursorOverlay:
             "max_speed": float(max_speed),
             "screen_w": int(screen_width),
             "screen_h": int(screen_height),
+            "scale_dip": float(scale_dip),
+            "scale_resp": float(scale_resp),
         }
         self._shared = None
         self._proc = None

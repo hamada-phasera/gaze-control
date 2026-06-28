@@ -17,9 +17,9 @@ from src.calibration import CalibrationOverlay
 from src.camera_stream import CameraStream
 from src.cursor_controller import CursorController
 from src.gaze_estimator import GazeEstimator, GazeResult
+from src.fixation import FixationTracker
 from src.gaze_pointer import GazePointer
 from src.hotkeys import HotkeyController
-from src.smoothing import MotionStabilizer
 from src.virtual_cursor import VirtualCursorOverlay
 
 
@@ -54,6 +54,7 @@ class GazeControlApp:
         no_hotkeys: bool = False,
         cursor_smoothing: float = config.VIRTUAL_CURSOR_SMOOTHING,
         cursor_max_speed: float = config.VIRTUAL_CURSOR_MAX_SPEED,
+        dwell_time: float = config.FIXATION_DWELL_TIME,
     ) -> None:
         self._debug = debug
         self._skip_calib = skip_calib
@@ -95,9 +96,9 @@ class GazeControlApp:
         # 視線ポインター（座標保持）
         self._pointer = GazePointer()
 
-        # 動き安定化（「ぬるっと」感）— 仮想カーソルモードで使用
-        self._stabilizer: Optional[MotionStabilizer] = (
-            MotionStabilizer() if virtual_cursor else None
+        # 注視ベースのターゲット確定（履歴重心+ドウェル）— 仮想カーソルモードで使用
+        self._fixation: Optional[FixationTracker] = (
+            FixationTracker(dwell_time=dwell_time) if virtual_cursor else None
         )
 
         # グローバルホットキー（ウィンドウ非表示でも終了/表示切替を受け付ける）
@@ -180,8 +181,8 @@ class GazeControlApp:
     def _do_reset(self) -> None:
         """カーソル位置と頭部基準をリセットして中央付近へ戻す。"""
         self._estimator.reset_runtime()
-        if self._stabilizer is not None:
-            self._stabilizer.reset()
+        if self._fixation is not None:
+            self._fixation.reset()
         print("リセット: 頭部基準とカーソル位置を再設定しました")
 
     def _run_calibration(self) -> bool:
@@ -277,11 +278,11 @@ class GazeControlApp:
 
             if result is not None:
                 if self._vcursor is not None:
-                    # 仮想カーソルモード: OSカーソルには触れず仮想カーソルだけを動かす（表示のみ）。
-                    # 動き安定化で微小なブレを削り「ぬるっと」追従させる。
-                    sx, sy = self._stabilizer.update(result.x, result.y, time.time())
-                    self._vcursor.update_position(sx, sy, visible=True)
-                    self._pointer.update_position(sx, sy)
+                    # 仮想カーソルモード: 注視（dwell+履歴重心）で確定した点だけへ移す。
+                    # 視線移動中・ノイズ中は保持し、着いたら留まる（途中の距離情報は捨てる）。
+                    fx, fy, _ = self._fixation.update(result.x, result.y, time.time())
+                    self._vcursor.update_position(fx, fy, visible=True)
+                    self._pointer.update_position(fx, fy)
                 else:
                     # 通常モード: OSの実カーソルを制御
                     clicked = self._controller.update(
@@ -549,6 +550,12 @@ def parse_args() -> argparse.Namespace:
         default=config.VIRTUAL_CURSOR_MAX_SPEED,
         help=f"仮想カーソルの最大速度 px/秒 (小さいほど遅く見失いにくい, 0で無制限, デフォルト: {config.VIRTUAL_CURSOR_MAX_SPEED})",
     )
+    parser.add_argument(
+        "--dwell-time",
+        type=float,
+        default=config.FIXATION_DWELL_TIME,
+        help=f"注視確定までの滞留時間 秒 (この時間とどまると移動。0.2〜0.5推奨, デフォルト: {config.FIXATION_DWELL_TIME})",
+    )
     return parser.parse_args()
 
 
@@ -569,6 +576,7 @@ def main() -> None:
         no_hotkeys=args.no_hotkeys,
         cursor_smoothing=args.smoothing,
         cursor_max_speed=args.max_speed,
+        dwell_time=args.dwell_time,
     )
 
     try:
