@@ -826,7 +826,9 @@ class GazeEstimator:
         eye_h = max(1e-6, float(np.linalg.norm((bottom - top)[:2])))
         ratio_y = float(np.dot(diff[:2], perp)) / eye_h
 
-        return ratio_x, ratio_y
+        # 瞬きで eye_h→0 のとき ratio_y が発散するのを抑える
+        c = config.GAZE_RATIO_CLAMP
+        return (max(-c, min(c, ratio_x)), max(-c, min(c, ratio_y)))
 
     def _eye_ratio_3d(self, lm: object, eye: str) -> Tuple[float, float]:
         i_iris, i_inner, i_outer, i_top, i_bottom = self._eye_indices(eye)
@@ -858,7 +860,9 @@ class GazeEstimator:
         ratio_y = float(np.dot(diff, perp)) / max(
             0.001, float(np.linalg.norm(pt(i_bottom) - pt(i_top)))
         )
-        return ratio_x, ratio_y
+        # 瞬きスパイク抑制（3D経路と同じクランプ）
+        c = config.GAZE_RATIO_CLAMP
+        return (max(-c, min(c, ratio_x)), max(-c, min(c, ratio_y)))
 
     def _compute_iris_ratio(self, landmarks: object) -> Tuple[float, float]:
         lm = landmarks.landmark

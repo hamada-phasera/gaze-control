@@ -106,6 +106,20 @@ class TestRotationInvariance:
         assert rotated[1] == pytest.approx(base[1], abs=0.02)
 
 
+class TestBlinkClamp:
+    def test_tiny_eye_height_is_clamped(self):
+        from src import config
+        # 目をほぼ閉じた状態（top≈bottom）で虹彩がずれている → 比率が発散しかける
+        iris = np.array([0.02, 0.005, 0.0])
+        inner = np.array([0.0, 0.0, 0.0])
+        outer = np.array([0.04, 0.0, 0.0])
+        top = np.array([0.02, -0.0001, 0.0])
+        bottom = np.array([0.02, 0.0001, 0.0])   # eye_h ~ 0.0002
+        rx, ry = _r3(iris, inner, outer, top, bottom)
+        assert abs(ry) <= config.GAZE_RATIO_CLAMP + 1e-9
+        assert abs(rx) <= config.GAZE_RATIO_CLAMP + 1e-9
+
+
 class TestMatches2DOnFrontalNonFlippedEye:
     def test_matches_2d_helper_at_z0(self):
         # 非反転側（画像右の目）は z=0 で 2D の比率と一致するはず
