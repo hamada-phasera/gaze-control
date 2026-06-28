@@ -136,6 +136,20 @@ class TestGazeEstimator:
         out = GazeEstimator._vertical_offset(-0.4, 2.0, 1.0, 0.5, -1.0, 0.5)
         assert abs(out) > abs(-0.4 * 2.0)
 
+    def test_eye_weights(self) -> None:
+        assert GazeEstimator._eye_weights("right", 0.8) == pytest.approx((0.2, 0.8))
+        assert GazeEstimator._eye_weights("left", 0.8) == pytest.approx((0.8, 0.2))
+        assert GazeEstimator._eye_weights("both", 0.9) == (0.5, 0.5)
+        # weight は [0.5,1.0] にクランプ
+        assert GazeEstimator._eye_weights("right", 0.2) == (0.5, 0.5)
+        assert GazeEstimator._eye_weights("right", 1.5) == pytest.approx((0.0, 1.0))
+
+    def test_offset_applied_via_setter(self) -> None:
+        est = GazeEstimator(1920, 1080, skip_model=True)
+        est.set_offset(30.0, -20.0)
+        assert est._offset_x == 30.0 and est._offset_y == -20.0
+        est.release()
+
     def test_down_smooth_scale(self) -> None:
         # 上端/中央は1.0、最下端で 1-down_smooth、無効化は常に1.0
         assert GazeEstimator._down_smooth_scale(0.0, 1000.0, 0.6) == 1.0

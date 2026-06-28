@@ -130,6 +130,15 @@ DISTANCE_REF_CM = 40.0         # その基準距離 (cm)
 # --- 感度設定 ---
 DEFAULT_SENSITIVITY = 3.0  # デフォルト感度 (1.0〜10.0, 低めの方が安定)
 
+# --- 利き目（ドミナントアイ）---
+# 人は利き目で狙う。両目平均だと利き目と非利き目の中間にズレる（利き目が右なら左へズレやすい）。
+DOMINANT_EYE = "both"        # "right" / "left" / "both"（--eye）
+DOMINANT_EYE_WEIGHT = 0.5    # 利き目の重み 0.5=両目均等〜1.0=利き目のみ（--eye-weight）
+
+# --- 出力オフセット補正（系統的なズレの微調整, px）---
+OFFSET_X = 0.0   # 右が正（--offset-x。カーソルが左にズレるなら正の値）
+OFFSET_Y = 0.0   # 下が正（--offset-y。カーソルが下にズレるなら負の値）
+
 # --- 縦方向の可動域調整（カメラが画面上部 → 下方向が届きにくい/精度低下の対策）---
 VERTICAL_GAIN = 1.0          # 縦ゲイン倍率（>1で上下に広く届く。--v-gain で上書き）
 VERTICAL_DOWN_BOOST = 0.0    # 下を見るほど縦可動量を追加で増やす量 (0で無効。--down-boost で上書き)
@@ -218,9 +227,9 @@ VIRTUAL_CURSOR_CORE_RATIO = 0.28     # くっきり見える中心円の半径�
 VIRTUAL_CURSOR_BLUR_RATIO = 0.55     # ブラーの広がり (大きいほど halo が広範囲に)
 VIRTUAL_CURSOR_COLOR = (0, 200, 255)  # カーソル色 RGB (水色系のグロー)
 VIRTUAL_CURSOR_MAX_OPACITY = 0.85    # 最大不透明度 (0.0〜1.0)
-VIRTUAL_CURSOR_SMOOTHING = 0.12      # 追従応答性 (0<r<=1) — 小さいほど「ぬるっと」遅く滑る（--smoothingで上書き可）
+VIRTUAL_CURSOR_SMOOTHING = 0.22      # 追従応答性 (0<r<=1) — 大きいほど移動が速い（--smoothingで上書き可）
 VIRTUAL_CURSOR_TICK_DT = 1.0 / 120.0  # オーバーレイ再描画間隔 (秒) — 滑らかな動きのため高頻度
-VIRTUAL_CURSOR_MAX_SPEED = 900.0     # 最大速度 (px/秒) — 遠い目標でも一定速度でゆっくり滑り見失いにくい（--max-speedで上書き可, 0で無制限）
+VIRTUAL_CURSOR_MAX_SPEED = 1600.0    # 最大速度 (px/秒) — 点間の移動の速さ。固定は注視ロックが担うので速めでOK（--max-speed, 0で無制限）
 
 # --- サイズ・イージング（移動中は縮み、止まると膨らむ。点と点の距離を目立たなくする）---
 VIRTUAL_CURSOR_SCALE_DIP = 0.45      # 最大速度時にどれだけ縮むか (0〜1, 0.45=55%まで縮小)

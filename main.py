@@ -69,6 +69,10 @@ class GazeControlApp:
         down_smooth: float = config.VERTICAL_DOWN_SMOOTH,
         snap_radius: float = config.SNAP_MAGNET_RADIUS,
         sweep_calib: bool = False,
+        eye: str = config.DOMINANT_EYE,
+        eye_weight: float = config.DOMINANT_EYE_WEIGHT,
+        offset_x: float = config.OFFSET_X,
+        offset_y: float = config.OFFSET_Y,
     ) -> None:
         self._debug = debug
         self._skip_calib = skip_calib
@@ -101,6 +105,9 @@ class GazeControlApp:
         self._estimator.v_gain = v_gain
         self._estimator.down_boost = down_boost
         self._estimator.down_smooth = down_smooth
+        self._estimator.dominant_eye = eye
+        self._estimator.dominant_weight = eye_weight
+        self._estimator.set_offset(offset_x, offset_y)
 
         # カーソル制御:
         #   通常モード       → OSの実カーソルを動かす CursorController
@@ -718,6 +725,31 @@ def parse_args() -> argparse.Namespace:
         default=config.VERTICAL_DOWN_SMOOTH,
         help=f"下を見るほど縦を強く平滑化（下端の分散・ブレ抑制, 0で無効, 例 0.6, デフォルト: {config.VERTICAL_DOWN_SMOOTH})",
     )
+    parser.add_argument(
+        "--eye",
+        type=str,
+        choices=("right", "left", "both"),
+        default=config.DOMINANT_EYE,
+        help=f"利き目（狙いに使う目）。利き目が右なら right（デフォルト: {config.DOMINANT_EYE}）",
+    )
+    parser.add_argument(
+        "--eye-weight",
+        type=float,
+        default=config.DOMINANT_EYE_WEIGHT,
+        help=f"利き目の重み 0.5=両目均等〜1.0=利き目のみ（デフォルト: {config.DOMINANT_EYE_WEIGHT}）",
+    )
+    parser.add_argument(
+        "--offset-x",
+        type=float,
+        default=config.OFFSET_X,
+        help="カーソル左右オフセット px（右が正。左にズレるなら正の値）",
+    )
+    parser.add_argument(
+        "--offset-y",
+        type=float,
+        default=config.OFFSET_Y,
+        help="カーソル上下オフセット px（下が正。下にズレるなら負の値）",
+    )
     return parser.parse_args()
 
 
@@ -750,6 +782,10 @@ def main() -> None:
         down_smooth=args.down_smooth,
         snap_radius=args.snap_radius,
         sweep_calib=args.sweep_calib,
+        eye=args.eye,
+        eye_weight=args.eye_weight,
+        offset_x=args.offset_x,
+        offset_y=args.offset_y,
     )
 
     try:

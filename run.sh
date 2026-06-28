@@ -22,6 +22,8 @@ fi
 #   ./run.sh --hold-radius 160     # プリセット + ここを上書き（固定を強く）
 #   ./run.sh --sensitivity 1.5     # 感度だけ変更、他はプリセット
 PRESET=(--virtual-cursor --show-window --debug --no-hotkeys --snap-shape \
-        --sensitivity 1.0 --range 1.5 --distance-adapt 0.5 --dwell-time 0.3 --max-speed 700)
+        --eye right --eye-weight 0.8 \
+        --sensitivity 1.0 --range 1.5 --distance-adapt 0.5 \
+        --dwell-time 0.3 --max-speed 1500 --down-smooth 0.5)
 
 exec ./.venv/bin/python main.py "${PRESET[@]}" "$@"

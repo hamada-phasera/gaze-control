@@ -93,6 +93,12 @@ class GazeEstimator:
         self._down_boost = config.VERTICAL_DOWN_BOOST
         self._down_smooth = config.VERTICAL_DOWN_SMOOTH  # 下を見るほど強く平滑化
 
+        # 利き目・出力オフセット
+        self._dominant_eye = config.DOMINANT_EYE
+        self._dominant_weight = config.DOMINANT_EYE_WEIGHT
+        self._offset_x = config.OFFSET_X
+        self._offset_y = config.OFFSET_Y
+
         # 頭部姿勢推定 + 融合
         self._head_pose = HeadPoseEstimator(screen_width, screen_height)
         self._fusion = GazeFusion()
@@ -234,6 +240,37 @@ class GazeEstimator:
     @down_smooth.setter
     def down_smooth(self, value: float) -> None:
         self._down_smooth = max(0.0, min(0.95, float(value)))
+
+    @property
+    def dominant_eye(self) -> str:
+        return self._dominant_eye
+
+    @dominant_eye.setter
+    def dominant_eye(self, value: str) -> None:
+        v = str(value).lower()
+        self._dominant_eye = v if v in ("right", "left", "both") else "both"
+
+    @property
+    def dominant_weight(self) -> float:
+        return self._dominant_weight
+
+    @dominant_weight.setter
+    def dominant_weight(self, value: float) -> None:
+        self._dominant_weight = max(0.5, min(1.0, float(value)))
+
+    def set_offset(self, x: float, y: float) -> None:
+        self._offset_x = float(x)
+        self._offset_y = float(y)
+
+    @staticmethod
+    def _eye_weights(dominant: str, weight: float) -> Tuple[float, float]:
+        """(左目重み, 右目重み) を返す。weight=0.5で均等、1.0で利き目のみ。"""
+        w = min(1.0, max(0.5, weight))
+        if dominant == "right":
+            return (1.0 - w, w)
+        if dominant == "left":
+            return (w, 1.0 - w)
+        return (0.5, 0.5)
 
     @staticmethod
     def _down_smooth_scale(screen_y: float, screen_h: float, down_smooth: float) -> float:
@@ -424,6 +461,10 @@ class GazeEstimator:
         cutoff_scale_y = self._down_smooth_scale(screen_y, self._screen_height, self._down_smooth)
         screen_x = self._filter_screen_x(screen_x, now)
         screen_y = self._filter_screen_y(screen_y, now, cutoff_scale=cutoff_scale_y)
+
+        # 系統的なズレの補正（右が正/下が正）
+        screen_x += self._offset_x
+        screen_y += self._offset_y
 
         screen_x = max(0.0, min(float(self._screen_width - 1), screen_x))
         screen_y = max(0.0, min(float(self._screen_height - 1), screen_y))
@@ -619,8 +660,10 @@ class GazeEstimator:
         right_ratio_y = np.dot(right_diff, right_perp) / max(0.001, np.linalg.norm(
             pt(config.RIGHT_EYE_BOTTOM) - pt(config.RIGHT_EYE_TOP)))
 
-        avg_x = (left_ratio_x + right_ratio_x) / 2.0
-        avg_y = (left_ratio_y + right_ratio_y) / 2.0
+        # 利き目に重みを寄せて合成（両目平均だと利き目とのズレが出る）
+        wl, wr = self._eye_weights(self._dominant_eye, self._dominant_weight)
+        avg_x = wl * left_ratio_x + wr * right_ratio_x
+        avg_y = wl * left_ratio_y + wr * right_ratio_y
 
         mapped_x = 0.5 + avg_x * self._effective_gain
         mapped_y = 0.5 + self._vertical_offset(
