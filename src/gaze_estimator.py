@@ -91,6 +91,7 @@ class GazeEstimator:
         # 縦方向の可動域調整（下方向の届きにくさ対策）
         self._v_gain = config.VERTICAL_GAIN
         self._down_boost = config.VERTICAL_DOWN_BOOST
+        self._down_smooth = config.VERTICAL_DOWN_SMOOTH  # 下を見るほど強く平滑化
 
         # 頭部姿勢推定 + 融合
         self._head_pose = HeadPoseEstimator(screen_width, screen_height)
@@ -225,6 +226,25 @@ class GazeEstimator:
     @down_boost.setter
     def down_boost(self, value: float) -> None:
         self._down_boost = max(0.0, float(value))
+
+    @property
+    def down_smooth(self) -> float:
+        return self._down_smooth
+
+    @down_smooth.setter
+    def down_smooth(self, value: float) -> None:
+        self._down_smooth = max(0.0, min(0.95, float(value)))
+
+    @staticmethod
+    def _down_smooth_scale(screen_y: float, screen_h: float, down_smooth: float) -> float:
+        """下にいるほど小さい（=より強く平滑化）カットオフ倍率を返す。
+
+        画面上半分/中央は 1.0、最下端で 1 - down_smooth。
+        """
+        if down_smooth <= 0.0 or screen_h <= 0.0:
+            return 1.0
+        frac_down = max(0.0, min(1.0, (screen_y / screen_h - 0.5) * 2.0))
+        return max(0.05, 1.0 - down_smooth * frac_down)
 
     @staticmethod
     def _vertical_offset(
@@ -400,9 +420,10 @@ class GazeEstimator:
             screen_x = gaze_screen_x
             screen_y = gaze_screen_y
 
-        # One Euro Filter で最終出力を平滑化
+        # One Euro Filter で最終出力を平滑化（縦は下にいるほど強く平滑化して分散を抑える）
+        cutoff_scale_y = self._down_smooth_scale(screen_y, self._screen_height, self._down_smooth)
         screen_x = self._filter_screen_x(screen_x, now)
-        screen_y = self._filter_screen_y(screen_y, now)
+        screen_y = self._filter_screen_y(screen_y, now, cutoff_scale=cutoff_scale_y)
 
         screen_x = max(0.0, min(float(self._screen_width - 1), screen_x))
         screen_y = max(0.0, min(float(self._screen_height - 1), screen_y))

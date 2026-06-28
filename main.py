@@ -66,6 +66,7 @@ class GazeControlApp:
         snap_shape: bool = False,
         v_gain: float = config.VERTICAL_GAIN,
         down_boost: float = config.VERTICAL_DOWN_BOOST,
+        down_smooth: float = config.VERTICAL_DOWN_SMOOTH,
         snap_radius: float = config.SNAP_MAGNET_RADIUS,
         sweep_calib: bool = False,
     ) -> None:
@@ -99,6 +100,7 @@ class GazeControlApp:
         self._estimator.distance_adapt = distance_adapt
         self._estimator.v_gain = v_gain
         self._estimator.down_boost = down_boost
+        self._estimator.down_smooth = down_smooth
 
         # カーソル制御:
         #   通常モード       → OSの実カーソルを動かす CursorController
@@ -710,6 +712,12 @@ def parse_args() -> argparse.Namespace:
         default=config.VERTICAL_DOWN_BOOST,
         help=f"下を見るほど縦可動量を増やす量 (0で無効, 例 0.5, デフォルト: {config.VERTICAL_DOWN_BOOST})",
     )
+    parser.add_argument(
+        "--down-smooth",
+        type=float,
+        default=config.VERTICAL_DOWN_SMOOTH,
+        help=f"下を見るほど縦を強く平滑化（下端の分散・ブレ抑制, 0で無効, 例 0.6, デフォルト: {config.VERTICAL_DOWN_SMOOTH})",
+    )
     return parser.parse_args()
 
 
@@ -739,6 +747,7 @@ def main() -> None:
         snap_shape=args.snap_shape,
         v_gain=args.v_gain,
         down_boost=args.down_boost,
+        down_smooth=args.down_smooth,
         snap_radius=args.snap_radius,
         sweep_calib=args.sweep_calib,
     )

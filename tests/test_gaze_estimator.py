@@ -136,6 +136,14 @@ class TestGazeEstimator:
         out = GazeEstimator._vertical_offset(-0.4, 2.0, 1.0, 0.5, -1.0, 0.5)
         assert abs(out) > abs(-0.4 * 2.0)
 
+    def test_down_smooth_scale(self) -> None:
+        # 上端/中央は1.0、最下端で 1-down_smooth、無効化は常に1.0
+        assert GazeEstimator._down_smooth_scale(0.0, 1000.0, 0.6) == 1.0
+        assert GazeEstimator._down_smooth_scale(500.0, 1000.0, 0.6) == 1.0
+        assert GazeEstimator._down_smooth_scale(1000.0, 1000.0, 0.6) == pytest.approx(0.4)
+        assert GazeEstimator._down_smooth_scale(750.0, 1000.0, 0.6) == pytest.approx(0.7)
+        assert GazeEstimator._down_smooth_scale(1000.0, 1000.0, 0.0) == 1.0
+
     def test_compute_calibration_polynomial_accuracy(self) -> None:
         estimator = GazeEstimator(1920, 1080, skip_model=True)
 

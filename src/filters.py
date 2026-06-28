@@ -26,7 +26,7 @@ class OneEuroFilter:
         self._dx_prev: float = 0.0
         self._t_prev: Optional[float] = None
 
-    def __call__(self, x: float, t: Optional[float] = None) -> float:
+    def __call__(self, x: float, t: Optional[float] = None, cutoff_scale: float = 1.0) -> float:
         if t is None:
             t = time.time()
 
@@ -45,8 +45,9 @@ class OneEuroFilter:
         a_d = self._smoothing_factor(dt, self._d_cutoff)
         dx_hat = a_d * dx + (1 - a_d) * self._dx_prev
 
-        # 適応的カットオフ: 速度が大きいほどカットオフを上げる
-        cutoff = self._min_cutoff + self._beta * abs(dx_hat)
+        # 適応的カットオフ: 速度が大きいほどカットオフを上げる。
+        # cutoff_scale<1 で最小カットオフを下げ、より強く平滑化する（分散抑制用）。
+        cutoff = self._min_cutoff * max(0.01, cutoff_scale) + self._beta * abs(dx_hat)
 
         # 値のフィルタリング
         a = self._smoothing_factor(dt, cutoff)

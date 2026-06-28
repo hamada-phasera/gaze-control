@@ -28,6 +28,19 @@ class TestOneEuroFilter:
         f.reset()
         assert f(10.0, t=1.0) == 10.0
 
+    def test_cutoff_scale_increases_smoothing(self) -> None:
+        """cutoff_scale<1 の方が出力のブレ（分散）が小さくなる"""
+        import statistics as st
+
+        f_normal = OneEuroFilter(min_cutoff=1.0, beta=0.0)
+        f_strong = OneEuroFilter(min_cutoff=1.0, beta=0.0)
+        out_n, out_s = [], []
+        for i in range(60):
+            noisy = 0.5 + (0.1 if i % 2 == 0 else -0.1)
+            out_n.append(f_normal(noisy, t=i / 60.0, cutoff_scale=1.0))
+            out_s.append(f_strong(noisy, t=i / 60.0, cutoff_scale=0.15))
+        assert st.pstdev(out_s[-20:]) < st.pstdev(out_n[-20:])
+
 
 def test_no_circular_import() -> None:
     """head_pose_estimator は filters から OneEuroFilter を取り、gaze_estimator を
