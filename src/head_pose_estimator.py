@@ -7,7 +7,7 @@ import cv2
 import numpy as np
 
 from . import config
-from .gaze_estimator import OneEuroFilter
+from .filters import OneEuroFilter
 
 
 class HeadPoseResult(NamedTuple):
