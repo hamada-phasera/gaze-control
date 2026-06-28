@@ -797,34 +797,33 @@ class GazeEstimator:
     ) -> Tuple[float, float]:
         """虹彩オフセットから (ratio_x, ratio_y) を返す。各引数は 3D点 [x, y, z]。
 
-        横 (ratio_x): 目頭→目尻の3D軸 u に投影。u は頭と一緒に回るので、頭が
-          ヨー回転しても見かけのズレが相殺される（2D画像投影の前後ズレを除去）。
-        縦 (ratio_y): 画像平面で u に直交する縦軸へ投影。縦は目の上下動が小さく、
-          MediaPipe の z 座標ノイズに弱いので、z を使うと縦信号が汚れて潰れる
-          （Yが動かなくなる）。そこで縦だけは安定な画像平面(2D)で測る。
-        両軸とも左右の目で符号をそろえる（+x=虹彩が画像右, +y=虹彩が画像下）ので、
-        両目が打ち消さず補強し合う（2Dは目頭→目尻の向きが左右逆＝相殺しがち）。
-        """
-        eye_center = (inner + outer) / 2.0
-        diff = iris - eye_center
+        計測は「画像平面(xy)」で行う。z（奥行き）は使わない:
+          実際の顔は目尻(こめかみ側)が目頭(鼻側)より奥にあり、目頭→目尻の3D軸は
+          大きなZ成分を持つ。3Dに投影すると横の虹彩移動より顔の奥行き構造を測って
+          しまい、横信号がほぼ定数に潰れる（実測で iris_x が固定）。画像平面で測れば
+          素直に虹彩の左右/上下移動を拾える。目幅・目高で正規化するため、頭が回って
+          見かけが前後に縮んでも比率は概ね保たれる（縮みが分母分子で相殺）。
 
-        # --- 横: 3D（頭ヨーに不変）---
-        u = outer - inner
+        左右の目で符号をそろえる（+x=虹彩が画像右, +y=虹彩が画像下）ので、両目が
+        打ち消さず補強し合う（素の2Dは目頭→目尻の向きが左右逆＝相殺しがち）。
+        ここが既定2D経路との差で、縦リーチが広がる主因。
+        """
+        eye_center = (inner[:2] + outer[:2]) / 2.0
+        diff = iris[:2] - eye_center
+
+        u = outer[:2] - inner[:2]
         u_len = max(1e-6, float(np.linalg.norm(u)))
         u_hat = u / u_len
-        if u_hat[0] < 0.0:           # 画像右(+x)を正にそろえる
+        if u_hat[0] < 0.0:           # 画像右(+x)を正にそろえる（左右で符号一致）
             u_hat = -u_hat
-        ratio_x = float(np.dot(diff, u_hat)) / u_len
 
-        # --- 縦: 画像平面2D（zノイズを避け安定）---
-        u2 = u[:2]
-        u2_len = max(1e-6, float(np.linalg.norm(u2)))
-        u2_hat = u2 / u2_len
-        perp = np.array([-u2_hat[1], u2_hat[0]])   # u に直交（画像平面）
+        perp = np.array([-u_hat[1], u_hat[0]])   # u に直交
         if perp[1] < 0.0:            # 画像下(+y)を正にそろえる
             perp = -perp
-        eye_h = max(1e-6, float(np.linalg.norm((bottom - top)[:2])))
-        ratio_y = float(np.dot(diff[:2], perp)) / eye_h
+
+        eye_h = max(1e-6, float(np.linalg.norm(bottom[:2] - top[:2])))
+        ratio_x = float(np.dot(diff, u_hat)) / u_len
+        ratio_y = float(np.dot(diff, perp)) / eye_h
 
         # 瞬きで eye_h→0 のとき ratio_y が発散するのを抑える
         c = config.GAZE_RATIO_CLAMP

@@ -874,8 +874,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--gaze-3d",
         action="store_true",
-        help="虹彩比率を目のローカル3D平面で測る（④-lite）。頭の向きに原理的に強く、"
-             "左右の目の符号もそろえて補強し合う。信号が2Dと変わるので要 --recalibrate",
+        help="左右の目の符号をそろえて両目を補強し合う改良経路（縦横のリーチ拡大）。"
+             "画像平面で計測しz奥行きは使わない。信号が既定2Dと変わるので要 --recalibrate",
     )
     parser.add_argument(
         "--log-signals",
