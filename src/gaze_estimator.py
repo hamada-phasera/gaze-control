@@ -105,6 +105,7 @@ class GazeEstimator:
         self._gaze_only = config.GAZE_ONLY   # True=頭部融合なし（視線のみ）
         self._head_pitch_assist = config.HEAD_PITCH_ASSIST  # 縦だけ頭のピッチで補助
         self._head_comp = config.HEAD_COMP_X  # 横の頭ドリフト補正
+        self._head_norm = config.GAZE_HEAD_NORM  # 頭部正規化（比率段階でヨー/ピッチのズレを打ち消す）
         self._blend_gaze = config.USE_BLEND_GAZE  # True=eyeLook blendshapeを視線信号に使う
 
         # 精密モード状態
@@ -344,6 +345,14 @@ class GazeEstimator:
         self._head_comp = float(value)
 
     @property
+    def head_norm(self) -> float:
+        return self._head_norm
+
+    @head_norm.setter
+    def head_norm(self, value: float) -> None:
+        self._head_norm = float(value)
+
+    @property
     def head_pose_estimator(self) -> HeadPoseEstimator:
         return self._head_pose
 
@@ -409,6 +418,11 @@ class GazeEstimator:
         df = self.distance_factor(self._last_inter_eye, self._distance_ref, self._distance_adapt)
         self._effective_gain = self._sensitivity * self._range_mult * df
 
+        # 頭部姿勢を先に推定（虹彩比率の頭部正規化に使うため前倒し）。
+        head_pose_result = self._head_pose.estimate(landmarks, proc_w, proc_h, now)
+        if head_pose_result is not None and not self._head_pose.has_baseline:
+            self._head_pose.set_baseline(head_pose_result)
+
         # --- Blendshape（表情係数）スコア（Tasks API利用時のみ）---
         bs = blendshapes.score_map(self._last_blendshapes)
         blink_score = blendshapes.blink_score(bs)
@@ -427,6 +441,20 @@ class GazeEstimator:
             )
         else:
             iris_x, iris_y = self._compute_iris_ratio(landmarks)
+            # 頭部正規化: 基準からのヨー/ピッチのズレを比率の段階で打ち消す（校正済み時のみ）。
+            if (
+                self._head_norm != 0.0
+                and self.is_calibrated
+                and head_pose_result is not None
+                and self._head_pose.has_baseline
+            ):
+                dyaw = head_pose_result.yaw - self._head_pose.baseline_yaw
+                dpitch = head_pose_result.pitch - self._head_pose.baseline_pitch
+                iris_x, iris_y = self.head_normalize_ratio(
+                    iris_x, iris_y, dyaw, dpitch,
+                    self._head_norm,
+                    config.GAZE_HEAD_NORM_KX, config.GAZE_HEAD_NORM_KY,
+                )
 
         # One Euro Filter で視線比率を平滑化
         iris_x = self._filter_iris_x(iris_x, now)
@@ -463,9 +491,7 @@ class GazeEstimator:
             gaze_screen_x = iris_x * self._screen_width
             gaze_screen_y = iris_y * self._screen_height
 
-        # --- 頭部姿勢ベースの画面座標 ---
-        head_pose_result = self._head_pose.estimate(landmarks, proc_w, proc_h, now)
-
+        # --- 頭部姿勢ベースの画面座標（推定・基準設定は前段で実施済み）---
         head_yaw = 0.0
         head_pitch = 0.0
         w_gaze = 1.0
@@ -473,10 +499,6 @@ class GazeEstimator:
         if head_pose_result is not None:
             head_yaw = head_pose_result.yaw
             head_pitch = head_pose_result.pitch
-
-            # ベースラインがまだない場合は自動設定
-            if not self._head_pose.has_baseline:
-                self._head_pose.set_baseline(head_pose_result)
 
             if self._precision_mode:
                 # 精密モード: 頭部のみでアンカー周辺を微調整
@@ -687,6 +709,23 @@ class GazeEstimator:
     @staticmethod
     def _poly_features(gx: float, gy: float) -> np.ndarray:
         return np.array([gx, gy, gx ** 2, gy ** 2, gx * gy, 1.0])
+
+    @staticmethod
+    def head_normalize_ratio(
+        iris_x: float, iris_y: float,
+        dyaw_deg: float, dpitch_deg: float,
+        strength: float, kx: float, ky: float,
+    ) -> Tuple[float, float]:
+        """頭の向きが基準からズレた分だけ、虹彩比率(0.5中心)を逆補正する。
+
+        面外回転（顔の向き）で見かけの虹彩位置がズレるのを、キャリブ多項式の
+        「手前」で打ち消す。strength=0 で無補正。dyaw/dpitch は基準からの度数。
+        """
+        if strength == 0.0:
+            return iris_x, iris_y
+        iris_x -= strength * kx * dyaw_deg
+        iris_y -= strength * ky * dpitch_deg
+        return iris_x, iris_y
 
     def _compute_iris_ratio(self, landmarks: object) -> Tuple[float, float]:
         lm = landmarks.landmark

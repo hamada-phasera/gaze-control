@@ -63,3 +63,25 @@ class TestYawOffset:
         hp.set_baseline(HeadPoseResult(yaw=10.0, pitch=10.0, roll=0.0))
         o = hp.yaw_offset(HeadPoseResult(yaw=20.0, pitch=99.0, roll=0.0), 10.0)
         assert o == 100.0  # pitch=99 でも変わらない
+
+
+class TestBaselineAccessors:
+    def test_none_before_set(self) -> None:
+        hp = _hp()
+        assert hp.has_baseline is False
+        assert hp.baseline_yaw is None
+        assert hp.baseline_pitch is None
+
+    def test_exposes_baseline_after_set(self) -> None:
+        hp = _hp()
+        hp.set_baseline(HeadPoseResult(yaw=12.0, pitch=-3.0, roll=1.0))
+        assert hp.has_baseline is True
+        assert hp.baseline_yaw == 12.0
+        assert hp.baseline_pitch == -3.0
+
+    def test_reset_clears_baseline(self) -> None:
+        hp = _hp()
+        hp.set_baseline(HeadPoseResult(yaw=12.0, pitch=-3.0, roll=1.0))
+        hp.reset_baseline()
+        assert hp.baseline_yaw is None
+        assert hp.baseline_pitch is None

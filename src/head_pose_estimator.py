@@ -121,6 +121,14 @@ class HeadPoseEstimator:
     def has_baseline(self) -> bool:
         return self._baseline_yaw is not None
 
+    @property
+    def baseline_yaw(self) -> Optional[float]:
+        return self._baseline_yaw
+
+    @property
+    def baseline_pitch(self) -> Optional[float]:
+        return self._baseline_pitch
+
     def get_screen_offset(
         self, result: HeadPoseResult, sensitivity_mult: float = 1.0
     ) -> Tuple[float, float]:
