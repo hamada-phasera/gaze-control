@@ -102,6 +102,7 @@ class GazeEstimator:
         # 頭部姿勢推定 + 融合
         self._head_pose = HeadPoseEstimator(screen_width, screen_height)
         self._fusion = GazeFusion()
+        self._gaze_only = config.GAZE_ONLY   # True=頭部融合なし（視線のみ）
 
         # 精密モード状態
         self._precision_mode = False
@@ -308,6 +309,14 @@ class GazeEstimator:
         self._precision_mode = value
 
     @property
+    def gaze_only(self) -> bool:
+        return self._gaze_only
+
+    @gaze_only.setter
+    def gaze_only(self, value: bool) -> None:
+        self._gaze_only = bool(value)
+
+    @property
     def head_pose_estimator(self) -> HeadPoseEstimator:
         return self._head_pose
 
@@ -442,6 +451,11 @@ class GazeEstimator:
                     head_delta_x, head_delta_y,
                 )
                 w_gaze = 0.0
+            elif self._gaze_only:
+                # 視線オンリー: 頭部融合を使わず純粋に視線で決める
+                screen_x = gaze_screen_x
+                screen_y = gaze_screen_y
+                w_gaze = 1.0
             else:
                 # 通常モード: 視線 + 頭部の加重融合
                 head_screen_x, head_screen_y = self._head_pose.get_head_screen_position(

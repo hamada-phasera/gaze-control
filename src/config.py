@@ -173,8 +173,11 @@ ONE_EURO_HEAD_MIN_CUTOFF = 0.5
 ONE_EURO_HEAD_BETA = 0.3
 
 # --- 視線+頭部融合設定 ---
-FUSION_W_GAZE_MIN = 0.3       # 静止時の視線重み（頭部を優先）
-FUSION_W_GAZE_MAX = 0.85      # サッケード時の視線重み（視線を優先）
+# GAZE_ONLY=True なら頭部融合を使わず純粋に視線で決める（視線カーソルの既定）。
+# 頭部融合を使う場合でも、視線が支配的になるよう重みを高めに設定。
+GAZE_ONLY = True             # True=視線オンリー（頭部融合なし）。--fuse-head で融合に切替
+FUSION_W_GAZE_MIN = 0.85      # 静止時の視線重み（視線を主、頭部は微補助 ≤15%）
+FUSION_W_GAZE_MAX = 0.97      # サッケード時の視線重み
 FUSION_SACCADE_THRESHOLD = 300.0  # サッケード検出閾値 (px/s)
 
 # --- 精密モード設定（眉上げトリガー）---

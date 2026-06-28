@@ -73,6 +73,7 @@ class GazeControlApp:
         eye_weight: float = config.DOMINANT_EYE_WEIGHT,
         offset_x: float = config.OFFSET_X,
         offset_y: float = config.OFFSET_Y,
+        fuse_head: bool = False,
     ) -> None:
         self._debug = debug
         self._skip_calib = skip_calib
@@ -108,6 +109,7 @@ class GazeControlApp:
         self._estimator.dominant_eye = eye
         self._estimator.dominant_weight = eye_weight
         self._estimator.set_offset(offset_x, offset_y)
+        self._estimator.gaze_only = not fuse_head  # 既定=視線のみ（頭部融合なし）
 
         # カーソル制御:
         #   通常モード       → OSの実カーソルを動かす CursorController
@@ -753,6 +755,11 @@ def parse_args() -> argparse.Namespace:
         default=config.OFFSET_Y,
         help="カーソル上下オフセット px（下が正。下にズレるなら負の値）",
     )
+    parser.add_argument(
+        "--fuse-head",
+        action="store_true",
+        help="頭部姿勢を融合する（既定は視線オンリー）。頭を動かしても補助したい場合のみ",
+    )
     return parser.parse_args()
 
 
@@ -789,6 +796,7 @@ def main() -> None:
         eye_weight=args.eye_weight,
         offset_x=args.offset_x,
         offset_y=args.offset_y,
+        fuse_head=args.fuse_head,
     )
 
     try:
