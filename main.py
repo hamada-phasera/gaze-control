@@ -1,6 +1,7 @@
 """GazeControl — 視線追跡カーソル制御システム エントリーポイント（精度改善版）"""
 
 import argparse
+import os
 import sys
 import time
 from typing import Optional, Tuple
@@ -55,6 +56,10 @@ class GazeControlApp:
         cursor_smoothing: float = config.VIRTUAL_CURSOR_SMOOTHING,
         cursor_max_speed: float = config.VIRTUAL_CURSOR_MAX_SPEED,
         dwell_time: float = config.FIXATION_DWELL_TIME,
+        gaze_range: float = config.GAZE_RANGE_MULT,
+        distance_adapt: float = config.DISTANCE_ADAPT,
+        calib_file: str = config.CALIBRATION_FILE,
+        recalibrate: bool = False,
     ) -> None:
         self._debug = debug
         self._skip_calib = skip_calib
@@ -63,6 +68,8 @@ class GazeControlApp:
         self._threaded_camera = threaded_camera
         self._camera_index = camera_index
         self._no_hotkeys = no_hotkeys
+        self._calib_file = calib_file
+        self._recalibrate = recalibrate
 
         # プレビューウィンドウ: 既定で非表示（窓を見ると視線が引っ張られ制御が乱れるため）。
         # --debug または --show-window で初期表示、実行中は 'p' キーでトグルできる。
@@ -79,6 +86,8 @@ class GazeControlApp:
             self._screen_w, self._screen_h, enable_precision=precision_mode
         )
         self._estimator.sensitivity = sensitivity
+        self._estimator.range_mult = gaze_range
+        self._estimator.distance_adapt = distance_adapt
 
         # カーソル制御:
         #   通常モード       → OSの実カーソルを動かす CursorController
@@ -142,8 +151,15 @@ class GazeControlApp:
             self._cap = cap
             print(f"カメラ初期化完了 ({actual_w}x{actual_h})")
 
-        # キャリブレーション
-        if not self._skip_calib:
+        # キャリブレーション: 保存済みがあれば読み込んで dot をスキップ
+        loaded = False
+        if not self._recalibrate and not self._skip_calib:
+            if os.path.exists(self._calib_file) and self._estimator.load_calibration(self._calib_file):
+                print(f"保存済みキャリブを読み込みました（dotスキップ）: {self._calib_file}")
+                print("  やり直すには --recalibrate")
+                loaded = True
+
+        if not loaded and not self._skip_calib:
             print("キャリブレーションを開始します...")
             success = self._run_calibration()
             if not success:
@@ -152,7 +168,9 @@ class GazeControlApp:
                 self._cleanup()
                 sys.exit(1)
             print("キャリブレーション完了")
-        else:
+            if self._estimator.save_calibration(self._calib_file):
+                print(f"キャリブを保存しました（次回から自動読込でdotスキップ）: {self._calib_file}")
+        elif self._skip_calib:
             print("キャリブレーションをスキップしました（簡易マッピングモード）")
 
         # ポインター / 仮想カーソル起動
@@ -412,6 +430,18 @@ class GazeControlApp:
                 2,
             )
 
+            # 推定距離（30〜50cmが最適。緑=最適範囲, 黄=範囲外）
+            in_range = 30.0 <= result.distance_cm <= 50.0
+            cv2.putText(
+                debug_frame,
+                f"Dist:~{result.distance_cm:.0f}cm {'OK' if in_range else '(30-50cm)'}",
+                (10, 175),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.6,
+                (0, 255, 0) if in_range else (0, 200, 255),
+                2,
+            )
+
             # Dwell進捗バー
             progress = self._controller.dwell_progress if self._controller is not None else 0.0
             if progress > 0:
@@ -556,6 +586,29 @@ def parse_args() -> argparse.Namespace:
         default=config.FIXATION_DWELL_TIME,
         help=f"注視確定までの滞留時間 秒 (この時間とどまると移動。0.2〜0.5推奨, デフォルト: {config.FIXATION_DWELL_TIME})",
     )
+    parser.add_argument(
+        "--range",
+        type=float,
+        default=config.GAZE_RANGE_MULT,
+        help=f"可動域（ゲイン）倍率 — 大きいほど視線で広く届く (デフォルト: {config.GAZE_RANGE_MULT})",
+    )
+    parser.add_argument(
+        "--distance-adapt",
+        type=float,
+        default=config.DISTANCE_ADAPT,
+        help=f"距離適応の強さ 0〜1 (近い/遠いでゲイン自動調整。0で無効, デフォルト: {config.DISTANCE_ADAPT})",
+    )
+    parser.add_argument(
+        "--recalibrate",
+        action="store_true",
+        help="保存済みキャリブを無視して再キャリブする",
+    )
+    parser.add_argument(
+        "--calib-file",
+        type=str,
+        default=config.CALIBRATION_FILE,
+        help="キャリブ保存ファイルのパス",
+    )
     return parser.parse_args()
 
 
@@ -577,6 +630,10 @@ def main() -> None:
         cursor_smoothing=args.smoothing,
         cursor_max_speed=args.max_speed,
         dwell_time=args.dwell_time,
+        gaze_range=args.range,
+        distance_adapt=args.distance_adapt,
+        recalibrate=args.recalibrate,
+        calib_file=args.calib_file,
     )
 
     try:

@@ -116,6 +116,17 @@ CALIBRATION_DURATION = 1.5  # 各ポイントでのデータ収集時間 (秒)
 CALIBRATION_MIN_POINTS = 8  # キャリブレーション成立に必要な最小データ点数（多項式回帰に合わせて増加）
 CALIBRATION_RANDOMIZE = True  # キャリブレーション点の表示順をランダムにする
 
+# キャリブレーション結果の保存先（1回やれば次回から自動読込でdotスキップ）
+CALIBRATION_FILE = os.path.join(os.path.expanduser("~"), ".gaze_control_calibration.json")
+
+# --- 可動域・距離適応 ---
+GAZE_RANGE_MULT = 1.0       # 可動域（ゲイン）倍率 — 大きいほど視線で広く届く（--rangeで上書き）
+DISTANCE_ADAPT = 0.0        # 距離適応の強さ (0=無効〜1=フル, --distance-adaptで上書き)
+# 距離推定の基準（目の外角どうしの正規化距離と、その時の概算距離cm）。
+# 近いほど目が大きく写る＝inter_eyeが大きい。距離 ≒ DISTANCE_REF_CM * (REF_INTER_EYE / inter_eye)
+DISTANCE_REF_INTER_EYE = 0.13  # 約40cm時の目外角間の正規化距離（概算・実機で調整可）
+DISTANCE_REF_CM = 40.0         # その基準距離 (cm)
+
 # --- 感度設定 ---
 DEFAULT_SENSITIVITY = 3.0  # デフォルト感度 (1.0〜10.0, 低めの方が安定)
 

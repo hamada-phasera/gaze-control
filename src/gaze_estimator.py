@@ -27,6 +27,7 @@ class GazeResult(NamedTuple):
     fusion_w_gaze: float = 1.0
     blink_score: Optional[float] = None   # blendshape瞬きスコア(0〜1)。無ければNone
     brow_score: Optional[float] = None    # blendshape眉上げスコア(0〜1)。無ければNone
+    distance_cm: float = 0.0              # カメラからの推定距離 (cm, 概算)
 
 
 class _LandmarksAdapter:
@@ -78,6 +79,14 @@ class GazeEstimator:
         self._calibration_offset: Optional[np.ndarray] = None
 
         self._sensitivity = config.DEFAULT_SENSITIVITY
+
+        # 可動域・距離適応
+        self._range_mult = config.GAZE_RANGE_MULT          # 可動域（ゲイン）倍率
+        self._distance_adapt = config.DISTANCE_ADAPT       # 距離適応の強さ
+        self._distance_ref = config.DISTANCE_REF_INTER_EYE  # 基準の目外角間距離（キャリブ時に更新）
+        self._last_inter_eye = config.DISTANCE_REF_INTER_EYE
+        self._last_distance_cm = config.DISTANCE_REF_CM
+        self._effective_gain = config.DEFAULT_SENSITIVITY  # 距離適応後の実効ゲイン（毎フレーム算出）
 
         # 頭部姿勢推定 + 融合
         self._head_pose = HeadPoseEstimator(screen_width, screen_height)
@@ -182,6 +191,26 @@ class GazeEstimator:
         self._sensitivity = max(1.0, min(10.0, value))
 
     @property
+    def range_mult(self) -> float:
+        return self._range_mult
+
+    @range_mult.setter
+    def range_mult(self, value: float) -> None:
+        self._range_mult = max(0.1, float(value))
+
+    @property
+    def distance_adapt(self) -> float:
+        return self._distance_adapt
+
+    @distance_adapt.setter
+    def distance_adapt(self, value: float) -> None:
+        self._distance_adapt = max(0.0, min(1.0, float(value)))
+
+    @property
+    def last_distance_cm(self) -> float:
+        return self._last_distance_cm
+
+    @property
     def precision_mode(self) -> bool:
         return self._precision_mode
 
@@ -248,6 +277,12 @@ class GazeEstimator:
         landmarks = self._detect(rgb_frame, now)
         if landmarks is None:
             return None
+
+        # 距離推定（目外角間の正規化距離）と距離適応ゲイン
+        self._last_inter_eye = self._inter_eye_distance(landmarks)
+        self._last_distance_cm = self._inter_eye_to_cm(self._last_inter_eye)
+        df = self.distance_factor(self._last_inter_eye, self._distance_ref, self._distance_adapt)
+        self._effective_gain = self._sensitivity * self._range_mult * df
 
         # 虹彩比率を算出（顔オフセット減算なし — 頭部姿勢は融合で活用）
         iris_x, iris_y = self._compute_iris_ratio(landmarks)
@@ -353,12 +388,77 @@ class GazeEstimator:
             fusion_w_gaze=w_gaze,
             blink_score=blink_score,
             brow_score=brow_score,
+            distance_cm=self._last_distance_cm,
         )
 
     def set_precision_anchor(self, x: float, y: float) -> None:
         """精密モードのアンカーポイントを設定する"""
         self._precision_anchor_x = x
         self._precision_anchor_y = y
+
+    @staticmethod
+    def _inter_eye_distance(landmarks: object) -> float:
+        """両目の外角どうしの正規化距離。近いほど大きい（距離の逆数の代理）。"""
+        lm = landmarks.landmark
+        ax, ay = lm[config.LEFT_EYE_OUTER].x, lm[config.LEFT_EYE_OUTER].y
+        bx, by = lm[config.RIGHT_EYE_OUTER].x, lm[config.RIGHT_EYE_OUTER].y
+        return float(np.hypot(ax - bx, ay - by))
+
+    @staticmethod
+    def _inter_eye_to_cm(inter_eye: float) -> float:
+        """目外角間距離からカメラ距離 (cm) を概算する。"""
+        if inter_eye <= 1e-6:
+            return config.DISTANCE_REF_CM
+        return float(config.DISTANCE_REF_CM * (config.DISTANCE_REF_INTER_EYE / inter_eye))
+
+    @staticmethod
+    def distance_factor(inter_eye: float, ref: float, adapt: float) -> float:
+        """距離適応ゲイン係数。近い(inter_eye大)ほど下げ、遠いほど上げる。
+
+        adapt=0 で 1.0（無効）。極端を避けるため [0.4, 2.5] にクランプ。
+        """
+        if inter_eye <= 1e-6 or adapt <= 0.0 or ref <= 0.0:
+            return 1.0
+        raw = ref / inter_eye  # 近い→<1, 遠い→>1
+        factor = 1.0 + adapt * (raw - 1.0)
+        return float(min(2.5, max(0.4, factor)))
+
+    def save_calibration(self, path: str) -> bool:
+        """多項式キャリブ係数と距離基準を JSON に保存する。"""
+        if self._calib_coeff_x is None or self._calib_coeff_y is None:
+            return False
+        import json
+        data = {
+            "type": "poly",
+            "coeff_x": [float(v) for v in self._calib_coeff_x],
+            "coeff_y": [float(v) for v in self._calib_coeff_y],
+            "distance_ref": float(self._distance_ref),
+        }
+        try:
+            with open(path, "w") as f:
+                json.dump(data, f)
+            return True
+        except Exception:  # noqa: BLE001
+            return False
+
+    def load_calibration(self, path: str) -> bool:
+        """保存済みキャリブを読み込む。成功で True。"""
+        import json
+        try:
+            with open(path) as f:
+                data = json.load(f)
+            cx = np.array(data["coeff_x"], dtype=float)
+            cy = np.array(data["coeff_y"], dtype=float)
+            if cx.shape[0] != 6 or cy.shape[0] != 6:
+                return False
+            self._calib_coeff_x = cx
+            self._calib_coeff_y = cy
+            self._calibration_matrix = None
+            self._calibration_offset = None
+            self._distance_ref = float(data.get("distance_ref", config.DISTANCE_REF_INTER_EYE))
+            return True
+        except Exception:  # noqa: BLE001
+            return False
 
     def reset_face_baseline(self) -> None:
         self._head_pose.reset_baseline()
@@ -408,6 +508,9 @@ class GazeEstimator:
         self._calib_coeff_y = result_y
         self._calibration_matrix = None
         self._calibration_offset = None
+
+        # 距離適応の基準を「キャリブした距離」に設定
+        self._distance_ref = self._last_inter_eye
 
         # フィルタ・頭部姿勢・融合もリセット
         self._filter_iris_x.reset()
@@ -466,8 +569,8 @@ class GazeEstimator:
         avg_x = (left_ratio_x + right_ratio_x) / 2.0
         avg_y = (left_ratio_y + right_ratio_y) / 2.0
 
-        mapped_x = 0.5 + avg_x * self._sensitivity
-        mapped_y = 0.5 + avg_y * self._sensitivity
+        mapped_x = 0.5 + avg_x * self._effective_gain
+        mapped_y = 0.5 + avg_y * self._effective_gain
 
         return (mapped_x, mapped_y)
 
