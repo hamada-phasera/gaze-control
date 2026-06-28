@@ -462,9 +462,10 @@ class GazeEstimator:
         screen_x = self._filter_screen_x(screen_x, now)
         screen_y = self._filter_screen_y(screen_y, now, cutoff_scale=cutoff_scale_y)
 
-        # 系統的なズレの補正（右が正/下が正）
-        screen_x += self._offset_x
-        screen_y += self._offset_y
+        # 系統的なズレの補正（右が正/下が正）。キャリブ収集を汚さないよう校正済み時のみ。
+        if self.is_calibrated:
+            screen_x += self._offset_x
+            screen_y += self._offset_y
 
         screen_x = max(0.0, min(float(self._screen_width - 1), screen_x))
         screen_y = max(0.0, min(float(self._screen_height - 1), screen_y))
@@ -527,6 +528,9 @@ class GazeEstimator:
             "coeff_x": [float(v) for v in self._calib_coeff_x],
             "coeff_y": [float(v) for v in self._calib_coeff_y],
             "distance_ref": float(self._distance_ref),
+            # どの利き目設定で取ったかを保存し、読み込み時に必ず一致させる（食い違い防止）
+            "dominant_eye": self._dominant_eye,
+            "dominant_weight": float(self._dominant_weight),
         }
         try:
             with open(path, "w") as f:
@@ -550,6 +554,9 @@ class GazeEstimator:
             self._calibration_matrix = None
             self._calibration_offset = None
             self._distance_ref = float(data.get("distance_ref", config.DISTANCE_REF_INTER_EYE))
+            # 利き目設定はキャリブが正。フィールドが無い旧ファイルは「両目」とみなす。
+            self._dominant_eye = data.get("dominant_eye", "both")
+            self._dominant_weight = float(data.get("dominant_weight", 0.5))
             return True
         except Exception:  # noqa: BLE001
             return False

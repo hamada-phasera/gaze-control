@@ -190,8 +190,11 @@ class GazeControlApp:
         loaded = False
         if not self._recalibrate and not self._skip_calib:
             if os.path.exists(self._calib_file) and self._estimator.load_calibration(self._calib_file):
-                print(f"保存済みキャリブを読み込みました（dotスキップ）: {self._calib_file}")
-                print("  やり直すには --recalibrate")
+                print(
+                    f"保存済みキャリブを読み込みました（dotスキップ, 利き目="
+                    f"{self._estimator.dominant_eye}）: {self._calib_file}"
+                )
+                print("  利き目を変える/やり直すには --recalibrate")
                 loaded = True
 
         if not loaded and not self._skip_calib:
