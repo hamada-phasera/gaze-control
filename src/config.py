@@ -187,6 +187,7 @@ VIRTUAL_CURSOR_COLOR = (0, 200, 255)  # カーソル色 RGB (水色系のグロ�
 VIRTUAL_CURSOR_MAX_OPACITY = 0.85    # 最大不透明度 (0.0〜1.0)
 VIRTUAL_CURSOR_SMOOTHING = 0.12      # 追従応答性 (0<r<=1) — 小さいほど「ぬるっと」遅く滑る（--smoothingで上書き可）
 VIRTUAL_CURSOR_TICK_DT = 1.0 / 120.0  # オーバーレイ再描画間隔 (秒) — 滑らかな動きのため高頻度
+VIRTUAL_CURSOR_MAX_SPEED = 900.0     # 最大速度 (px/秒) — 遠い目標でも一定速度でゆっくり滑り見失いにくい（--max-speedで上書き可, 0で無制限）
 
 # --- 動き安定化（「ぬるっと」感 / ラグ由来のブレ抑制）---
 # リアルタイムすぎると微小なラグ・ノイズで視線が落ち着かないため、

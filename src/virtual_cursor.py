@@ -124,6 +124,41 @@ def exp_smooth(
     return current + frac * (target - current)
 
 
+def advance_cursor(
+    cx: float, cy: float,
+    tx: float, ty: float,
+    responsiveness: float, dt: float,
+    max_step: float,
+    screen_w: float, screen_h: float,
+    half_w: float, half_h: float,
+) -> Tuple[float, float]:
+    """1ティック分カーソルを進める純粋関数（テスト対象）。
+
+    指数スムージングで目標へ寄せ、`max_step`(>0)で1ティックの移動量を上限制限し、
+    スプライト全体が画面内に残るようクランプする。
+    """
+    nx = exp_smooth(cx, tx, responsiveness, dt)
+    ny = exp_smooth(cy, ty, responsiveness, dt)
+
+    # 速度キャップ（2D距離で制限）
+    if max_step > 0.0:
+        dx = nx - cx
+        dy = ny - cy
+        dist = (dx * dx + dy * dy) ** 0.5
+        if dist > max_step and dist > 0.0:
+            scale = max_step / dist
+            nx = cx + dx * scale
+            ny = cy + dy * scale
+
+    # カーソル全体を画面内に保つ
+    if screen_w > 2 * half_w:
+        nx = min(max(nx, half_w), screen_w - half_w)
+    if screen_h > 2 * half_h:
+        ny = min(max(ny, half_h), screen_h - half_h)
+
+    return (nx, ny)
+
+
 # ---------------------------------------------------------------------------
 # オーバーレイ（Qt — 子プロセス側で実行）
 # ---------------------------------------------------------------------------
@@ -210,6 +245,10 @@ def _qt_overlay_main(shared, params: dict) -> None:
     tick_dt = float(params["tick_dt"])
     responsiveness = float(params["smoothing"])
     max_opacity = float(params["max_opacity"])
+    max_speed = float(params.get("max_speed", 0.0))
+    screen_w = float(params.get("screen_w", 0) or 0)
+    screen_h = float(params.get("screen_h", 0) or 0)
+    max_step = max_speed * tick_dt if max_speed > 0 else 0.0
 
     state = {"x": float(shared[_IDX_X]), "y": float(shared[_IDX_Y])}
 
@@ -223,9 +262,14 @@ def _qt_overlay_main(shared, params: dict) -> None:
             app.quit()
             return
 
-        state["x"] = exp_smooth(state["x"], tx, responsiveness, tick_dt)
-        state["y"] = exp_smooth(state["y"], ty, responsiveness, tick_dt)
-        overlay.move(int(round(state["x"] - half_w)), int(round(state["y"] - half_h)))
+        nx, ny = advance_cursor(
+            state["x"], state["y"], tx, ty,
+            responsiveness, tick_dt, max_step,
+            screen_w, screen_h, half_w, half_h,
+        )
+        state["x"] = nx
+        state["y"] = ny
+        overlay.move(int(round(nx - half_w)), int(round(ny - half_h)))
 
         target_op = max_opacity if vis >= 0.5 else 0.0
         overlay.set_opacity(overlay._opacity + 0.25 * (target_op - overlay._opacity))
@@ -257,6 +301,7 @@ class VirtualCursorOverlay:
         max_opacity: float = config.VIRTUAL_CURSOR_MAX_OPACITY,
         smoothing: float = config.VIRTUAL_CURSOR_SMOOTHING,
         tick_dt: float = config.VIRTUAL_CURSOR_TICK_DT,
+        max_speed: float = config.VIRTUAL_CURSOR_MAX_SPEED,
     ) -> None:
         self._screen_width = screen_width
         self._screen_height = screen_height
@@ -268,6 +313,9 @@ class VirtualCursorOverlay:
             "max_opacity": float(max_opacity),
             "smoothing": float(smoothing),
             "tick_dt": float(tick_dt),
+            "max_speed": float(max_speed),
+            "screen_w": int(screen_width),
+            "screen_h": int(screen_height),
         }
         self._shared = None
         self._proc = None

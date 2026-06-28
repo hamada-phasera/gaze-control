@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 from src import config
-from src.virtual_cursor import exp_smooth, make_cursor_sprite
+from src.virtual_cursor import advance_cursor, exp_smooth, make_cursor_sprite
 
 
 class TestMakeCursorSprite:
@@ -113,3 +113,57 @@ class TestExpSmooth:
         half = exp_smooth(0.0, 100.0, 0.5, 1.0 / 60.0)
         two_step = exp_smooth(half, 100.0, 0.5, 1.0 / 60.0)
         assert one_step == pytest.approx(two_step, abs=1e-6)
+
+
+class TestAdvanceCursor:
+    """速度キャップ＋画面内クランプのテスト"""
+
+    def test_speed_cap_limits_step(self) -> None:
+        """遠い目標でも1ティックの移動量は max_step 以下（開始点は画面内）"""
+        max_step = 7.5
+        sx, sy = 100.0, 100.0
+        nx, ny = advance_cursor(
+            sx, sy, 3000.0, 100.0,
+            responsiveness=1.0, dt=1.0 / 120.0, max_step=max_step,
+            screen_w=10000.0, screen_h=10000.0, half_w=90.0, half_h=90.0,
+        )
+        dist = ((nx - sx) ** 2 + (ny - sy) ** 2) ** 0.5
+        assert dist <= max_step + 1e-9
+
+    def test_no_cap_when_zero(self) -> None:
+        """max_step=0 ならキャップ無し（exp_smoothそのまま, クランプ無効化）"""
+        nx, _ = advance_cursor(
+            0.0, 0.0, 100.0, 0.0,
+            responsiveness=0.5, dt=1.0 / 60.0, max_step=0.0,
+            screen_w=10000.0, screen_h=10000.0, half_w=0.0, half_h=0.0,
+        )
+        assert nx == pytest.approx(exp_smooth(0.0, 100.0, 0.5, 1.0 / 60.0))
+
+    def test_clamp_keeps_sprite_on_screen(self) -> None:
+        """中心がスプライト半径ぶん内側にクランプされ、全体が画面内に残る"""
+        nx, ny = advance_cursor(
+            5.0, 5.0, 0.0, 0.0,
+            responsiveness=1.0, dt=1.0 / 60.0, max_step=0.0,
+            screen_w=1000.0, screen_h=800.0, half_w=90.0, half_h=90.0,
+        )
+        assert nx >= 90.0 and ny >= 90.0
+
+    def test_clamp_upper_bound(self) -> None:
+        nx, ny = advance_cursor(
+            0.0, 0.0, 5000.0, 5000.0,
+            responsiveness=1.0, dt=1.0 / 60.0, max_step=0.0,
+            screen_w=1000.0, screen_h=800.0, half_w=90.0, half_h=90.0,
+        )
+        assert nx <= 1000.0 - 90.0 and ny <= 800.0 - 90.0
+
+    def test_converges_to_target_over_time(self) -> None:
+        """十分なティック数で目標へ収束する（キャップ有りでも）"""
+        x, y = 0.0, 0.0
+        for _ in range(2000):
+            x, y = advance_cursor(
+                x, y, 1500.0, 400.0,
+                responsiveness=0.2, dt=1.0 / 120.0, max_step=7.5,
+                screen_w=3024.0, screen_h=1964.0, half_w=90.0, half_h=90.0,
+            )
+        assert x == pytest.approx(1500.0, abs=1.0)
+        assert y == pytest.approx(400.0, abs=1.0)

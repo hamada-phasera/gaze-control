@@ -53,6 +53,7 @@ class GazeControlApp:
         camera_index: int = config.CAMERA_INDEX,
         no_hotkeys: bool = False,
         cursor_smoothing: float = config.VIRTUAL_CURSOR_SMOOTHING,
+        cursor_max_speed: float = config.VIRTUAL_CURSOR_MAX_SPEED,
     ) -> None:
         self._debug = debug
         self._skip_calib = skip_calib
@@ -85,7 +86,8 @@ class GazeControlApp:
         self._vcursor: Optional[VirtualCursorOverlay] = None
         if virtual_cursor:
             self._vcursor = VirtualCursorOverlay(
-                self._screen_w, self._screen_h, smoothing=cursor_smoothing
+                self._screen_w, self._screen_h,
+                smoothing=cursor_smoothing, max_speed=cursor_max_speed,
             )
         else:
             self._controller = CursorController(blink_click=blink_click)
@@ -541,6 +543,12 @@ def parse_args() -> argparse.Namespace:
         default=config.VIRTUAL_CURSOR_SMOOTHING,
         help=f"仮想カーソルの追従応答性 (0<r<=1, 小さいほど遅くぬるっと, デフォルト: {config.VIRTUAL_CURSOR_SMOOTHING})",
     )
+    parser.add_argument(
+        "--max-speed",
+        type=float,
+        default=config.VIRTUAL_CURSOR_MAX_SPEED,
+        help=f"仮想カーソルの最大速度 px/秒 (小さいほど遅く見失いにくい, 0で無制限, デフォルト: {config.VIRTUAL_CURSOR_MAX_SPEED})",
+    )
     return parser.parse_args()
 
 
@@ -560,6 +568,7 @@ def main() -> None:
         camera_index=args.camera_index,
         no_hotkeys=args.no_hotkeys,
         cursor_smoothing=args.smoothing,
+        cursor_max_speed=args.max_speed,
     )
 
     try:
