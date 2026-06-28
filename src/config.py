@@ -169,6 +169,10 @@ HEAD_SENSITIVITY_PITCH = 40.0  # 縦方向: 1度あたり40px移動
 # px/度。0で無効（純粋視線）。--head-assist で上書き。
 HEAD_PITCH_ASSIST = 45.0
 
+# 頭ドリフト補正: キャリブ時の頭の向き(基準)から横にズレた分を差し引く。
+# px/度。0で無効。符号は実機で調整（逆なら負値）。--head-comp で上書き。
+HEAD_COMP_X = 0.0
+
 # 追加ランドマークインデックス
 GLABELLA_INDEX = 168           # 眉間（鼻梁上部）
 FOREHEAD_CENTER_INDEX = 10     # 額中心

@@ -34,3 +34,32 @@ class TestVerticalAssist:
         hp.set_baseline(HeadPoseResult(yaw=0.0, pitch=10.0, roll=0.0))
         a = hp.vertical_assist(HeadPoseResult(yaw=30.0, pitch=5.0, roll=0.0), 45.0)
         assert a == 225.0  # yaw=30 でも変わらない
+
+
+class TestYawOffset:
+    def test_zero_without_baseline(self) -> None:
+        hp = _hp()
+        assert hp.yaw_offset(HeadPoseResult(30.0, 0.0, 0.0), 10.0) == 0.0
+
+    def test_positive_yaw_delta(self) -> None:
+        hp = _hp()
+        hp.set_baseline(HeadPoseResult(yaw=10.0, pitch=0.0, roll=0.0))
+        # 基準より yaw が大きい → (20-10)*10 = 100
+        assert hp.yaw_offset(HeadPoseResult(20.0, 0.0, 0.0), 10.0) == 100.0
+
+    def test_negative_yaw_delta(self) -> None:
+        hp = _hp()
+        hp.set_baseline(HeadPoseResult(yaw=10.0, pitch=0.0, roll=0.0))
+        assert hp.yaw_offset(HeadPoseResult(5.0, 0.0, 0.0), 10.0) == -50.0
+
+    def test_zero_gain(self) -> None:
+        hp = _hp()
+        hp.set_baseline(HeadPoseResult(yaw=10.0, pitch=0.0, roll=0.0))
+        assert hp.yaw_offset(HeadPoseResult(20.0, 0.0, 0.0), 0.0) == 0.0
+
+    def test_pitch_ignored(self) -> None:
+        """ピッチ（縦）は横ドリフト補正に影響しない"""
+        hp = _hp()
+        hp.set_baseline(HeadPoseResult(yaw=10.0, pitch=10.0, roll=0.0))
+        o = hp.yaw_offset(HeadPoseResult(yaw=20.0, pitch=99.0, roll=0.0), 10.0)
+        assert o == 100.0  # pitch=99 でも変わらない

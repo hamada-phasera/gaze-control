@@ -104,6 +104,7 @@ class GazeEstimator:
         self._fusion = GazeFusion()
         self._gaze_only = config.GAZE_ONLY   # True=頭部融合なし（視線のみ）
         self._head_pitch_assist = config.HEAD_PITCH_ASSIST  # 縦だけ頭のピッチで補助
+        self._head_comp = config.HEAD_COMP_X  # 横の頭ドリフト補正
         self._blend_gaze = config.USE_BLEND_GAZE  # True=eyeLook blendshapeを視線信号に使う
 
         # 精密モード状態
@@ -335,6 +336,14 @@ class GazeEstimator:
         self._blend_gaze = bool(value)
 
     @property
+    def head_comp(self) -> float:
+        return self._head_comp
+
+    @head_comp.setter
+    def head_comp(self, value: float) -> None:
+        self._head_comp = float(value)
+
+    @property
     def head_pose_estimator(self) -> HeadPoseEstimator:
         return self._head_pose
 
@@ -501,6 +510,9 @@ class GazeEstimator:
                 screen_y += self._head_pose.vertical_assist(
                     head_pose_result, self._head_pitch_assist
                 )
+            # 横の頭ドリフト補正: 初期観測(基準)から頭が左右に動いた分を差し引く
+            if not self._precision_mode and self.is_calibrated and self._head_comp != 0.0:
+                screen_x -= self._head_pose.yaw_offset(head_pose_result, self._head_comp)
         else:
             # 頭部姿勢推定失敗時は視線のみ
             screen_x = gaze_screen_x

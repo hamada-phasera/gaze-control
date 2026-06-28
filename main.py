@@ -75,6 +75,7 @@ class GazeControlApp:
         offset_y: float = config.OFFSET_Y,
         fuse_head: bool = False,
         head_assist: float = config.HEAD_PITCH_ASSIST,
+        head_comp: float = config.HEAD_COMP_X,
         blend_gaze: bool = False,
     ) -> None:
         self._debug = debug
@@ -113,6 +114,7 @@ class GazeControlApp:
         self._estimator.set_offset(offset_x, offset_y)
         self._estimator.gaze_only = not fuse_head  # 既定=視線のみ（頭部融合なし）
         self._estimator.head_pitch_assist = head_assist  # 縦だけ頭のピッチで補助
+        self._estimator.head_comp = head_comp  # 横の頭ドリフト補正
         self._estimator.blend_gaze = blend_gaze  # eyeLook blendshapeを視線信号に使う（実験的）
 
         # カーソル制御:
@@ -775,6 +777,12 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="視線信号に eyeLook blendshape を使う（頭ブレに強い・縦も素直。実験的）。要 --recalibrate",
     )
+    parser.add_argument(
+        "--head-comp",
+        type=float,
+        default=config.HEAD_COMP_X,
+        help="横の頭ドリフト補正 px/度（初期観測から頭が左右に動いた分を差引く。逆なら負値, 0で無効）",
+    )
     return parser.parse_args()
 
 
@@ -813,6 +821,7 @@ def main() -> None:
         offset_y=args.offset_y,
         fuse_head=args.fuse_head,
         head_assist=args.head_assist,
+        head_comp=args.head_comp,
         blend_gaze=args.blend_gaze,
     )
 

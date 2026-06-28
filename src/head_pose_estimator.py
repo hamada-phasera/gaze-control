@@ -144,6 +144,15 @@ class HeadPoseEstimator:
 
         return (delta_x, delta_y)
 
+    def yaw_offset(self, result: HeadPoseResult, gain: float) -> float:
+        """頭のヨー（左右）が基準からズレた分 × gain を返す（横ドリフト補正用）。
+
+        基準未設定 or gain=0 なら 0。
+        """
+        if self._baseline_yaw is None or gain == 0.0:
+            return 0.0
+        return (result.yaw - self._baseline_yaw) * gain
+
     def vertical_assist(self, result: HeadPoseResult, gain: float) -> float:
         """頭のピッチ（うなずき）から縦方向のオフセット (px) を返す。
 
