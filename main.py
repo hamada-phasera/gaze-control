@@ -23,6 +23,7 @@ from src.fixation import FixationTracker
 from src.gaze_pointer import GazePointer
 from src.gestures import EyesClosedTrigger, is_eye_closed
 from src.hotkeys import HotkeyController
+from src.signal_logger import SignalLogger
 from src.virtual_cursor import VirtualCursorOverlay
 
 
@@ -79,6 +80,7 @@ class GazeControlApp:
         head_norm: float = config.GAZE_HEAD_NORM,
         gaze_3d: bool = config.GAZE_3D,
         blend_gaze: bool = False,
+        log_signals: Optional[str] = None,
     ) -> None:
         self._debug = debug
         self._skip_calib = skip_calib
@@ -155,6 +157,11 @@ class GazeControlApp:
         # 再センタリング: 'c' キーで画面中央を見て追加オフセットを自動補正。
         # Noneのとき非収集。リストのときサンプル収集中。
         self._recenter_samples: Optional[List[Tuple[float, float]]] = None
+
+        # 視線信号ロガー（--log-signals PATH 指定時のみ）。遠隔デバッグ用。
+        self._logger: Optional[SignalLogger] = (
+            SignalLogger(log_signals) if log_signals else None
+        )
 
         # 形状スナップ＋磁石スナップ（近くのボタン/カードに吸着＋形変形）— 仮想カーソルモードのみ
         self._shape_snap: Optional[AccessibilitySnap] = None
@@ -236,6 +243,14 @@ class GazeControlApp:
                 print("注意: 仮想カーソルを起動できませんでした（PySide6/PyQt5 未導入かGUI不可の可能性）")
         else:
             print("視線ポインターを起動しました")
+
+        # 信号ロガー開始（指定時のみ）
+        if self._logger is not None:
+            if self._logger.start():
+                print(f"信号ログを記録します（顔の映像は保存しません）: {self._logger._path}")
+            else:
+                print("注意: 信号ログを開けませんでした")
+                self._logger = None
 
         # メインループ
         print("視線追跡を開始します（Q キーまたは ESC で終了）")
@@ -432,6 +447,10 @@ class GazeControlApp:
                 # 再センタリング収集中なら生の視線出力を集める（注視ロック/吸着の前）
                 if self._recenter_samples is not None:
                     self._collect_recenter(result.x, result.y)
+
+                # 信号ログ記録（指定時）
+                if self._logger is not None:
+                    self._logger.log(time.time(), result)
 
                 if self._vcursor is not None:
                     # 仮想カーソルモード: 注視で確定した点へ。近くにUI要素があれば吸着＋形変形。
@@ -651,6 +670,10 @@ class GazeControlApp:
         if self._cap is not None:
             self._cap.release()
         self._estimator.release()
+        if self._logger is not None:
+            n = self._logger.rows
+            self._logger.close()
+            print(f"信号ログを保存しました（{n}行）: {self._logger._path}")
         cv2.destroyAllWindows()
         print("終了しました。")
 
@@ -853,6 +876,14 @@ def parse_args() -> argparse.Namespace:
         help="虹彩比率を目のローカル3D平面で測る（④-lite）。頭の向きに原理的に強く、"
              "左右の目の符号もそろえて補強し合う。信号が2Dと変わるので要 --recalibrate",
     )
+    parser.add_argument(
+        "--log-signals",
+        type=str,
+        default=None,
+        metavar="PATH",
+        help="視線信号をCSVに記録（顔の映像は保存しない）。遠隔デバッグ用。"
+             "tools/analyze_signal_log.py で解析できる",
+    )
     return parser.parse_args()
 
 
@@ -895,6 +926,7 @@ def main() -> None:
         head_norm=args.head_normalize,
         gaze_3d=args.gaze_3d,
         blend_gaze=args.blend_gaze,
+        log_signals=args.log_signals,
     )
 
     try:

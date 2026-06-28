@@ -28,6 +28,8 @@ class GazeResult(NamedTuple):
     blink_score: Optional[float] = None   # blendshape瞬きスコア(0〜1)。無ければNone
     brow_score: Optional[float] = None    # blendshape眉上げスコア(0〜1)。無ければNone
     distance_cm: float = 0.0              # カメラからの推定距離 (cm, 概算)
+    iris_x: float = 0.5                   # 多項式キャリブ前の視線比率X（0.5中心）。ログ/診断用
+    iris_y: float = 0.5                   # 多項式キャリブ前の視線比率Y（0.5中心）。ログ/診断用
 
 
 class _LandmarksAdapter:
@@ -608,6 +610,7 @@ class GazeEstimator:
             blink_score=blink_score,
             brow_score=brow_score,
             distance_cm=self._last_distance_cm,
+            iris_x=iris_x, iris_y=iris_y,
         )
 
     def set_precision_anchor(self, x: float, y: float) -> None:
