@@ -75,6 +75,7 @@ class GazeControlApp:
         offset_y: float = config.OFFSET_Y,
         fuse_head: bool = False,
         head_assist: float = config.HEAD_PITCH_ASSIST,
+        blend_gaze: bool = False,
     ) -> None:
         self._debug = debug
         self._skip_calib = skip_calib
@@ -112,6 +113,7 @@ class GazeControlApp:
         self._estimator.set_offset(offset_x, offset_y)
         self._estimator.gaze_only = not fuse_head  # 既定=視線のみ（頭部融合なし）
         self._estimator.head_pitch_assist = head_assist  # 縦だけ頭のピッチで補助
+        self._estimator.blend_gaze = blend_gaze  # eyeLook blendshapeを視線信号に使う（実験的）
 
         # カーソル制御:
         #   通常モード       → OSの実カーソルを動かす CursorController
@@ -768,6 +770,11 @@ def parse_args() -> argparse.Namespace:
         default=config.HEAD_PITCH_ASSIST,
         help=f"縦の頭部アシスト px/度（頭の上下で縦リーチを広げる。0で純粋視線, デフォルト: {config.HEAD_PITCH_ASSIST}）",
     )
+    parser.add_argument(
+        "--blend-gaze",
+        action="store_true",
+        help="視線信号に eyeLook blendshape を使う（頭ブレに強い・縦も素直。実験的）。要 --recalibrate",
+    )
     return parser.parse_args()
 
 
@@ -806,6 +813,7 @@ def main() -> None:
         offset_y=args.offset_y,
         fuse_head=args.fuse_head,
         head_assist=args.head_assist,
+        blend_gaze=args.blend_gaze,
     )
 
     try:

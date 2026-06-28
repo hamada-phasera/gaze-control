@@ -204,6 +204,10 @@ BLINK_BLENDSHAPE_THRESHOLD = 0.5            # eyeBlink スコアがこれ以上�
 USE_BLENDSHAPE_BROW = True                  # 眉上げを blendshape で判定する
 PRECISION_MODE_BLENDSHAPE_THRESHOLD = 0.4   # browUp スコアがこれ以上で「眉上げ」
 
+# 視線信号に eyeLook blendshape を使う（生の虹彩比率より頭ブレに強い・縦も素直）。実験的。
+USE_BLEND_GAZE = False        # True で有効（--blend-gaze）
+BLEND_GAZE_GAIN = 4.0         # blendshape視線量([-1,1])→正規化座標へのゲイン
+
 BLENDSHAPE_EYE_BLINK_LEFT = "eyeBlinkLeft"
 BLENDSHAPE_EYE_BLINK_RIGHT = "eyeBlinkRight"
 BLENDSHAPE_BROW_INNER_UP = "browInnerUp"

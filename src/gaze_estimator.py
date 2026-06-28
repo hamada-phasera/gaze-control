@@ -104,6 +104,7 @@ class GazeEstimator:
         self._fusion = GazeFusion()
         self._gaze_only = config.GAZE_ONLY   # True=頭部融合なし（視線のみ）
         self._head_pitch_assist = config.HEAD_PITCH_ASSIST  # 縦だけ頭のピッチで補助
+        self._blend_gaze = config.USE_BLEND_GAZE  # True=eyeLook blendshapeを視線信号に使う
 
         # 精密モード状態
         self._precision_mode = False
@@ -326,6 +327,14 @@ class GazeEstimator:
         self._head_pitch_assist = max(0.0, float(value))
 
     @property
+    def blend_gaze(self) -> bool:
+        return self._blend_gaze
+
+    @blend_gaze.setter
+    def blend_gaze(self, value: bool) -> None:
+        self._blend_gaze = bool(value)
+
+    @property
     def head_pose_estimator(self) -> HeadPoseEstimator:
         return self._head_pose
 
@@ -391,10 +400,26 @@ class GazeEstimator:
         df = self.distance_factor(self._last_inter_eye, self._distance_ref, self._distance_adapt)
         self._effective_gain = self._sensitivity * self._range_mult * df
 
-        # 虹彩比率を算出（顔オフセット減算なし — 頭部姿勢は融合で活用）
-        iris_x, iris_y = self._compute_iris_ratio(landmarks)
+        # --- Blendshape（表情係数）スコア（Tasks API利用時のみ）---
+        bs = blendshapes.score_map(self._last_blendshapes)
+        blink_score = blendshapes.blink_score(bs)
+        brow_score = blendshapes.brow_raise_score(bs)
 
-        # One Euro Filter で虹彩比率を平滑化
+        # --- 視線信号: blendshape(eyeLook)優先 or 虹彩比率（幾何）---
+        # blendshapeはモデルが頭の向きを織り込んだ視線量なので頭ブレに強い。
+        gaze_ratio = blendshapes.gaze_xy(bs) if self._blend_gaze else None
+        if gaze_ratio is not None:
+            h, v = gaze_ratio
+            g = config.BLEND_GAZE_GAIN
+            iris_x = 0.5 + h * g
+            iris_y = 0.5 + self._vertical_offset(
+                v, g, self._v_gain, self._down_boost,
+                config.VERTICAL_DOWN_SIGN, config.VERTICAL_DOWN_REF,
+            )
+        else:
+            iris_x, iris_y = self._compute_iris_ratio(landmarks)
+
+        # One Euro Filter で視線比率を平滑化
         iris_x = self._filter_iris_x(iris_x, now)
         iris_y = self._filter_iris_y(iris_y, now)
 
@@ -404,11 +429,6 @@ class GazeEstimator:
 
         avg_ear = (left_ear + right_ear) / 2.0
         confidence = min(1.0, avg_ear / config.BLINK_EAR_THRESHOLD) if avg_ear < config.BLINK_EAR_THRESHOLD else 1.0
-
-        # --- Blendshape（表情係数）スコア（Tasks API利用時のみ）---
-        bs = blendshapes.score_map(self._last_blendshapes)
-        blink_score = blendshapes.blink_score(bs)
-        brow_score = blendshapes.brow_raise_score(bs)
 
         # --- 眉上げで精密モードを自動切替（opt-in: enable_precision）---
         if self._precision_detector is not None:

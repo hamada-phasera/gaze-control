@@ -48,6 +48,34 @@ class TestBlinkScore:
         assert blendshapes.blink_score({"browInnerUp": 0.5}) is None
 
 
+class TestGazeXY:
+    def test_none_when_absent(self) -> None:
+        assert blendshapes.gaze_xy({}) is None
+        assert blendshapes.gaze_xy({"eyeBlinkLeft": 0.5}) is None
+
+    def test_look_right_positive_x(self) -> None:
+        # 右を見る = 左目内 + 右目外
+        scores = {"eyeLookInLeft": 0.8, "eyeLookOutRight": 0.8}
+        h, v = blendshapes.gaze_xy(scores)
+        assert h > 0.0
+        assert v == 0.0
+
+    def test_look_left_negative_x(self) -> None:
+        scores = {"eyeLookOutLeft": 0.8, "eyeLookInRight": 0.8}
+        h, _ = blendshapes.gaze_xy(scores)
+        assert h < 0.0
+
+    def test_look_down_positive_y(self) -> None:
+        scores = {"eyeLookDownLeft": 0.7, "eyeLookDownRight": 0.7}
+        _, v = blendshapes.gaze_xy(scores)
+        assert v > 0.0
+
+    def test_look_up_negative_y(self) -> None:
+        scores = {"eyeLookUpLeft": 0.7, "eyeLookUpRight": 0.7}
+        _, v = blendshapes.gaze_xy(scores)
+        assert v < 0.0
+
+
 class TestBrowRaiseScore:
     def test_inner_up(self) -> None:
         scores = {config.BLENDSHAPE_BROW_INNER_UP: 0.6}

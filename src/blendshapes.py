@@ -12,7 +12,7 @@ mediapipe に依存しない純粋ロジックで、フェイクの Category で
 
 from __future__ import annotations
 
-from typing import Dict, Optional
+from typing import Dict, Optional, Tuple
 
 from . import config
 
@@ -49,6 +49,37 @@ def blink_score(scores: Dict[str, float]) -> Optional[float]:
     if not vals:
         return None
     return sum(vals) / len(vals)
+
+
+def gaze_xy(scores: Dict[str, float]) -> Optional[Tuple[float, float]]:
+    """eyeLook* blendshapes から (水平, 垂直) の視線量を返す。
+
+    水平は右が正、垂直は下が正。各値はおよそ [-1, 1]。モデルが頭の向きを
+    織り込んで正規化した視線量なので、生の虹彩比率より頭ブレに強い。
+    該当blendshapeが無ければ None。
+
+    ARKit互換の意味:
+      eyeLookIn*  = 鼻側（内）を見る, eyeLookOut* = 外側を見る
+      右を見る = 左目が内(右)＋右目が外(右) / 左を見る = 左目が外＋右目が内
+    """
+    if not scores:
+        return None
+    need = (
+        "eyeLookInLeft", "eyeLookOutLeft", "eyeLookInRight", "eyeLookOutRight",
+        "eyeLookUpLeft", "eyeLookDownLeft", "eyeLookUpRight", "eyeLookDownRight",
+    )
+    if not any(n in scores for n in need):
+        return None
+
+    def s(name: str) -> float:
+        return float(scores.get(name, 0.0))
+
+    look_right = (s("eyeLookInLeft") + s("eyeLookOutRight")) / 2.0
+    look_left = (s("eyeLookOutLeft") + s("eyeLookInRight")) / 2.0
+    look_down = (s("eyeLookDownLeft") + s("eyeLookDownRight")) / 2.0
+    look_up = (s("eyeLookUpLeft") + s("eyeLookUpRight")) / 2.0
+
+    return (look_right - look_left, look_down - look_up)
 
 
 def brow_raise_score(scores: Dict[str, float]) -> Optional[float]:
