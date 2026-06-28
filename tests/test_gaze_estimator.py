@@ -119,6 +119,23 @@ class TestGazeEstimator:
         expected = np.array([0.3, 0.7, 0.09, 0.49, 0.21, 1.0])
         np.testing.assert_allclose(features, expected, atol=1e-10)
 
+    def test_vertical_offset_down_boost(self) -> None:
+        # 下(avg_y>0)はブーストで増幅、上(avg_y<0)は等倍
+        down = GazeEstimator._vertical_offset(0.4, 2.0, 1.0, 0.5, 1.0, 0.5)
+        assert down > 0.4 * 2.0
+        up = GazeEstimator._vertical_offset(-0.4, 2.0, 1.0, 0.5, 1.0, 0.5)
+        assert up == pytest.approx(-0.4 * 2.0)
+
+    def test_vertical_offset_v_gain(self) -> None:
+        # down_boost=0 なら v_gain 倍そのまま
+        out = GazeEstimator._vertical_offset(0.2, 2.0, 1.5, 0.0, 1.0, 0.5)
+        assert out == pytest.approx(0.2 * 2.0 * 1.5)
+
+    def test_vertical_offset_sign_flip(self) -> None:
+        # sign=-1 のとき、下向き判定が反転（avg_y<0 が増幅される）
+        out = GazeEstimator._vertical_offset(-0.4, 2.0, 1.0, 0.5, -1.0, 0.5)
+        assert abs(out) > abs(-0.4 * 2.0)
+
     def test_compute_calibration_polynomial_accuracy(self) -> None:
         estimator = GazeEstimator(1920, 1080, skip_model=True)
 

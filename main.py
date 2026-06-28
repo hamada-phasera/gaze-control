@@ -64,6 +64,9 @@ class GazeControlApp:
         calib_file: str = config.CALIBRATION_FILE,
         recalibrate: bool = False,
         snap_shape: bool = False,
+        v_gain: float = config.VERTICAL_GAIN,
+        down_boost: float = config.VERTICAL_DOWN_BOOST,
+        snap_radius: float = config.SNAP_MAGNET_RADIUS,
     ) -> None:
         self._debug = debug
         self._skip_calib = skip_calib
@@ -92,6 +95,8 @@ class GazeControlApp:
         self._estimator.sensitivity = sensitivity
         self._estimator.range_mult = gaze_range
         self._estimator.distance_adapt = distance_adapt
+        self._estimator.v_gain = v_gain
+        self._estimator.down_boost = down_boost
 
         # カーソル制御:
         #   通常モード       → OSの実カーソルを動かす CursorController
@@ -124,9 +129,11 @@ class GazeControlApp:
         # 3秒間目を閉じる→リセット のジェスチャ
         self._eyes_closed = EyesClosedTrigger()
 
-        # 形状スナップ（カーソルをボタン/カードの形に変形）— 仮想カーソルモードでのみ
+        # 形状スナップ＋磁石スナップ（近くのボタン/カードに吸着＋形変形）— 仮想カーソルモードのみ
         self._shape_snap: Optional[AccessibilitySnap] = None
         self._shape_query_t = 0.0
+        self._snap_cache: Optional[Tuple[float, float, float, float]] = None
+        self._snap_radius = snap_radius
         if snap_shape and virtual_cursor:
             if AccessibilitySnap.is_available():
                 self._shape_snap = AccessibilitySnap()
@@ -221,25 +228,35 @@ class GazeControlApp:
         self._eyes_closed.reset()
         print("リセット: 頭部基準とカーソル位置を再設定しました")
 
-    def _update_shape_snap(self, x: float, y: float) -> None:
-        """カーソル下のUI要素矩形を（間引いて）問い合わせ、仮想カーソルの形を更新する。"""
+    def _apply_snap(self, fx: float, fy: float) -> Tuple[float, float]:
+        """近傍のUI要素に吸着（磁石）＋形状変形する。
+
+        間引いて近傍要素を問い合わせ（キャッシュ）、見つかればその中心へ吸着して
+        カーソルをボタン/カードの形に変形する。無ければ (fx, fy) を返す。
+        """
         if self._shape_snap is None or self._vcursor is None:
-            return
+            return (fx, fy)
+
         now = time.time()
-        if now - self._shape_query_t < config.SNAP_SHAPE_QUERY_INTERVAL:
-            return
-        self._shape_query_t = now
-        try:
-            frame = self._shape_snap.element_frame_at(x, y)
-        except Exception:  # noqa: BLE001
-            frame = None
+        if now - self._shape_query_t >= config.SNAP_SHAPE_QUERY_INTERVAL:
+            self._shape_query_t = now
+            try:
+                self._snap_cache = self._shape_snap.nearest_element_frame(
+                    fx, fy, self._snap_radius
+                )
+            except Exception:  # noqa: BLE001
+                self._snap_cache = None
+
+        frame = self._snap_cache
         if frame is not None:
             ecx, ecy, ew, eh = frame
             if (config.SNAP_SHAPE_MIN_SIZE <= ew <= config.SNAP_SHAPE_MAX_SIZE
                     and config.SNAP_SHAPE_MIN_SIZE <= eh <= config.SNAP_SHAPE_MAX_SIZE):
                 self._vcursor.set_shape(ecx, ecy, ew, eh)
-                return
+                return (ecx, ecy)  # 磁石: 要素中心へ吸着
+
         self._vcursor.clear_shape()
+        return (fx, fy)
 
     def _run_calibration(self) -> bool:
         """キャリブレーションを実行"""
@@ -340,12 +357,11 @@ class GazeControlApp:
                     self._do_reset()
 
                 if self._vcursor is not None:
-                    # 仮想カーソルモード: 注視（dwell+履歴重心）で確定した点だけへ移す。
-                    # 視線移動中・ノイズ中は保持し、着いたら留まる（途中の距離情報は捨てる）。
+                    # 仮想カーソルモード: 注視で確定した点へ。近くにUI要素があれば吸着＋形変形。
                     fx, fy, _ = self._fixation.update(result.x, result.y, time.time())
-                    self._vcursor.update_position(fx, fy, visible=True)
-                    self._pointer.update_position(fx, fy)
-                    self._update_shape_snap(fx, fy)
+                    cx, cy = self._apply_snap(fx, fy)
+                    self._vcursor.update_position(cx, cy, visible=True)
+                    self._pointer.update_position(cx, cy)
                 else:
                     # 通常モード: OSの実カーソルを制御
                     clicked = self._controller.update(
@@ -663,7 +679,25 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--snap-shape",
         action="store_true",
-        help="注視先のボタン/カードの形にカーソルを変形する（macOS Accessibility, 実験的）",
+        help="近くのボタン/カードに吸着＋その形にカーソルを変形（磁石スナップ, macOS Accessibility, 実験的）",
+    )
+    parser.add_argument(
+        "--snap-radius",
+        type=float,
+        default=config.SNAP_MAGNET_RADIUS,
+        help=f"磁石スナップの吸着半径 px (デフォルト: {config.SNAP_MAGNET_RADIUS})",
+    )
+    parser.add_argument(
+        "--v-gain",
+        type=float,
+        default=config.VERTICAL_GAIN,
+        help=f"縦ゲイン倍率（>1で上下に広く届く, デフォルト: {config.VERTICAL_GAIN}）",
+    )
+    parser.add_argument(
+        "--down-boost",
+        type=float,
+        default=config.VERTICAL_DOWN_BOOST,
+        help=f"下を見るほど縦可動量を増やす量 (0で無効, 例 0.5, デフォルト: {config.VERTICAL_DOWN_BOOST})",
     )
     return parser.parse_args()
 
@@ -692,6 +726,9 @@ def main() -> None:
         recalibrate=args.recalibrate,
         calib_file=args.calib_file,
         snap_shape=args.snap_shape,
+        v_gain=args.v_gain,
+        down_boost=args.down_boost,
+        snap_radius=args.snap_radius,
     )
 
     try:

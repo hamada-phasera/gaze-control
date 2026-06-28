@@ -130,6 +130,15 @@ DISTANCE_REF_CM = 40.0         # その基準距離 (cm)
 # --- 感度設定 ---
 DEFAULT_SENSITIVITY = 3.0  # デフォルト感度 (1.0〜10.0, 低めの方が安定)
 
+# --- 縦方向の可動域調整（カメラが画面上部 → 下方向が届きにくい/精度低下の対策）---
+VERTICAL_GAIN = 1.0          # 縦ゲイン倍率（>1で上下に広く届く。--v-gain で上書き）
+VERTICAL_DOWN_BOOST = 0.0    # 下を見るほど縦可動量を追加で増やす量 (0で無効。--down-boost で上書き)
+VERTICAL_DOWN_SIGN = 1.0     # 「下方向」に対応する avg_y の符号（ブーストが上方向に効くなら -1.0 に）
+VERTICAL_DOWN_REF = 0.5      # down_boost が最大になる avg_y の大きさ（正規化基準）
+
+# --- 磁石スナップ（近くのボタン/カード/ウィンドウにカーソルを吸着）---
+SNAP_MAGNET_RADIUS = 130.0   # この距離内に要素があれば吸着 (px, --snap-radius で上書き)
+
 # --- 頭部姿勢推定設定 ---
 # solvePnP用の3D顔モデル座標（mm単位、鼻先が原点）
 FACE_3D_MODEL = np.array([

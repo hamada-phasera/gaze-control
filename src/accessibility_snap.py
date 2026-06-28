@@ -163,6 +163,41 @@ class AccessibilitySnap:
         except Exception:
             return None
 
+    def nearest_element_frame(
+        self, x: float, y: float, radius: Optional[float] = None
+    ) -> Optional[Tuple[float, float, float, float]]:
+        """近傍の最寄りインタラクティブ要素の (中心x, 中心y, 幅, 高さ) を返す（磁石スナップ用）。
+
+        まず直下を見て、無ければリング状に少数サンプルして最寄りを探す。
+        AX呼び出しを抑えるため間引いた探索（直下＋16点）。
+        """
+        if not _AX_AVAILABLE or self._system_wide is None:
+            return None
+        r = self._snap_radius if radius is None else float(radius)
+
+        frame = self._get_interactable_frame(x, y)
+        if frame is not None:
+            return frame
+
+        best: Optional[Tuple[float, float, float, float]] = None
+        best_dist = float("inf")
+        seen: set = set()
+        for rr in (r * 0.5, r):
+            for k in range(8):
+                ang = 2.0 * math.pi * k / 8.0
+                f = self._get_interactable_frame(x + rr * math.cos(ang), y + rr * math.sin(ang))
+                if f is None:
+                    continue
+                key = (int(f[0]), int(f[1]))
+                if key in seen:
+                    continue
+                seen.add(key)
+                d = math.hypot(f[0] - x, f[1] - y)
+                if d < best_dist and d <= r:
+                    best_dist = d
+                    best = f
+        return best
+
     def _get_interactable_center(
         self, x: float, y: float
     ) -> Optional[Tuple[float, float]]:

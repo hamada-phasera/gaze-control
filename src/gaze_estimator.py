@@ -88,6 +88,10 @@ class GazeEstimator:
         self._last_distance_cm = config.DISTANCE_REF_CM
         self._effective_gain = config.DEFAULT_SENSITIVITY  # 距離適応後の実効ゲイン（毎フレーム算出）
 
+        # 縦方向の可動域調整（下方向の届きにくさ対策）
+        self._v_gain = config.VERTICAL_GAIN
+        self._down_boost = config.VERTICAL_DOWN_BOOST
+
         # 頭部姿勢推定 + 融合
         self._head_pose = HeadPoseEstimator(screen_width, screen_height)
         self._fusion = GazeFusion()
@@ -205,6 +209,34 @@ class GazeEstimator:
     @distance_adapt.setter
     def distance_adapt(self, value: float) -> None:
         self._distance_adapt = max(0.0, min(1.0, float(value)))
+
+    @property
+    def v_gain(self) -> float:
+        return self._v_gain
+
+    @v_gain.setter
+    def v_gain(self, value: float) -> None:
+        self._v_gain = max(0.1, float(value))
+
+    @property
+    def down_boost(self) -> float:
+        return self._down_boost
+
+    @down_boost.setter
+    def down_boost(self, value: float) -> None:
+        self._down_boost = max(0.0, float(value))
+
+    @staticmethod
+    def _vertical_offset(
+        avg_y: float, base_gain: float, v_gain: float,
+        down_boost: float, sign: float, ref: float,
+    ) -> float:
+        """縦方向のオフセット (0.5 からのズレ)。下を見るほどゲインを増やす。"""
+        gy = base_gain * v_gain
+        down = avg_y * sign  # >0 で「下向き」
+        if down_boost > 0.0 and down > 0.0 and ref > 0.0:
+            gy *= 1.0 + down_boost * min(1.0, down / ref)
+        return avg_y * gy
 
     @property
     def last_distance_cm(self) -> float:
@@ -570,7 +602,10 @@ class GazeEstimator:
         avg_y = (left_ratio_y + right_ratio_y) / 2.0
 
         mapped_x = 0.5 + avg_x * self._effective_gain
-        mapped_y = 0.5 + avg_y * self._effective_gain
+        mapped_y = 0.5 + self._vertical_offset(
+            avg_y, self._effective_gain, self._v_gain, self._down_boost,
+            config.VERTICAL_DOWN_SIGN, config.VERTICAL_DOWN_REF,
+        )
 
         return (mapped_x, mapped_y)
 
