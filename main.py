@@ -381,10 +381,11 @@ class GazeControlApp:
         if result is None:
             return None
 
-        # キャリブレーション前なので、生の比率を返す
-        ratio_x = result.x / self._screen_w
-        ratio_y = result.y / self._screen_h
-        return (ratio_x, ratio_y)
+        # キャリブには「キャリブ前の生の視線比率」を渡す。
+        # result.x/y は画面範囲[0,W/H]にクランプ済みのため、範囲外になりやすい縦
+        # （iris_y は構造的に負/1超になりうる）が 0 や端に潰れて学習が壊れる。
+        # runtime と同じ生比率(iris_x/iris_y)を使い、入力をキャリブと一致させる。
+        return (result.iris_x, result.iris_y)
 
     def _main_loop(self) -> None:
         """メインフレームループ"""
