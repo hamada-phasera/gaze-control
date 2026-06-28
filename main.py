@@ -74,6 +74,7 @@ class GazeControlApp:
         offset_x: float = config.OFFSET_X,
         offset_y: float = config.OFFSET_Y,
         fuse_head: bool = False,
+        head_assist: float = config.HEAD_PITCH_ASSIST,
     ) -> None:
         self._debug = debug
         self._skip_calib = skip_calib
@@ -110,6 +111,7 @@ class GazeControlApp:
         self._estimator.dominant_weight = eye_weight
         self._estimator.set_offset(offset_x, offset_y)
         self._estimator.gaze_only = not fuse_head  # 既定=視線のみ（頭部融合なし）
+        self._estimator.head_pitch_assist = head_assist  # 縦だけ頭のピッチで補助
 
         # カーソル制御:
         #   通常モード       → OSの実カーソルを動かす CursorController
@@ -760,6 +762,12 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="頭部姿勢を融合する（既定は視線オンリー）。頭を動かしても補助したい場合のみ",
     )
+    parser.add_argument(
+        "--head-assist",
+        type=float,
+        default=config.HEAD_PITCH_ASSIST,
+        help=f"縦の頭部アシスト px/度（頭の上下で縦リーチを広げる。0で純粋視線, デフォルト: {config.HEAD_PITCH_ASSIST}）",
+    )
     return parser.parse_args()
 
 
@@ -797,6 +805,7 @@ def main() -> None:
         offset_x=args.offset_x,
         offset_y=args.offset_y,
         fuse_head=args.fuse_head,
+        head_assist=args.head_assist,
     )
 
     try:

@@ -103,6 +103,7 @@ class GazeEstimator:
         self._head_pose = HeadPoseEstimator(screen_width, screen_height)
         self._fusion = GazeFusion()
         self._gaze_only = config.GAZE_ONLY   # True=頭部融合なし（視線のみ）
+        self._head_pitch_assist = config.HEAD_PITCH_ASSIST  # 縦だけ頭のピッチで補助
 
         # 精密モード状態
         self._precision_mode = False
@@ -317,6 +318,14 @@ class GazeEstimator:
         self._gaze_only = bool(value)
 
     @property
+    def head_pitch_assist(self) -> float:
+        return self._head_pitch_assist
+
+    @head_pitch_assist.setter
+    def head_pitch_assist(self, value: float) -> None:
+        self._head_pitch_assist = max(0.0, float(value))
+
+    @property
     def head_pose_estimator(self) -> HeadPoseEstimator:
         return self._head_pose
 
@@ -465,6 +474,12 @@ class GazeEstimator:
                     gaze_screen_x, gaze_screen_y,
                     head_screen_x, head_screen_y,
                     now,
+                )
+
+            # 縦の頭部アシスト: 横は視線のまま、頭の上下で縦リーチを広げる（校正済み時のみ）
+            if not self._precision_mode and self.is_calibrated and self._head_pitch_assist > 0.0:
+                screen_y += self._head_pose.vertical_assist(
+                    head_pose_result, self._head_pitch_assist
                 )
         else:
             # 頭部姿勢推定失敗時は視線のみ

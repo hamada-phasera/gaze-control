@@ -144,6 +144,17 @@ class HeadPoseEstimator:
 
         return (delta_x, delta_y)
 
+    def vertical_assist(self, result: HeadPoseResult, gain: float) -> float:
+        """頭のピッチ（うなずき）から縦方向のオフセット (px) を返す。
+
+        基準より下を向く（pitch小）と正（下へ）、上を向くと負（上へ）。横は使わない。
+        基準未設定なら 0。
+        """
+        if self._baseline_pitch is None or gain == 0.0:
+            return 0.0
+        delta_pitch = result.pitch - self._baseline_pitch
+        return -delta_pitch * gain
+
     def get_head_screen_position(
         self, result: HeadPoseResult, sensitivity_mult: float = 1.0
     ) -> Tuple[float, float]:

@@ -164,6 +164,11 @@ FACE_3D_MODEL = np.array([
 HEAD_SENSITIVITY_YAW = 50.0    # 横方向: 1度あたり50px移動
 HEAD_SENSITIVITY_PITCH = 40.0  # 縦方向: 1度あたり40px移動
 
+# 縦の頭部アシスト（横は視線のまま、縦だけ頭のピッチで可動域を広げる）。
+# 目の上下の動きは構造的に小さいので、頭の傾き(うなずき)で縦リーチを補助する。
+# px/度。0で無効（純粋視線）。--head-assist で上書き。
+HEAD_PITCH_ASSIST = 45.0
+
 # 追加ランドマークインデックス
 GLABELLA_INDEX = 168           # 眉間（鼻梁上部）
 FOREHEAD_CENTER_INDEX = 10     # 額中心
