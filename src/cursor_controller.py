@@ -55,6 +55,7 @@ class CursorController:
         left_ear: float,
         right_ear: float,
         confidence: float,
+        blink_score: Optional[float] = None,
     ) -> bool:
         if confidence < 0.1:
             return False
@@ -105,9 +106,20 @@ class CursorController:
 
         # クリック判定
         if self._blink_click:
-            return self._check_blink_click(left_ear, right_ear)
+            is_blinking = self._is_eye_closed(left_ear, right_ear, blink_score)
+            return self._check_blink_click(is_blinking)
         else:
             return self._check_dwell_click(self._cursor_x, self._cursor_y)
+
+    @staticmethod
+    def _is_eye_closed(
+        left_ear: float, right_ear: float, blink_score: Optional[float]
+    ) -> bool:
+        """閉眼かどうかを判定する。blendshape瞬きスコアがあれば最優先。"""
+        if blink_score is not None and config.USE_BLENDSHAPE_BLINK:
+            return blink_score >= config.BLINK_BLENDSHAPE_THRESHOLD
+        avg_ear = (left_ear + right_ear) / 2.0
+        return avg_ear < config.BLINK_EAR_THRESHOLD
 
     def _snap_and_click(self) -> bool:
         """スナップしてクリックする"""
@@ -156,10 +168,7 @@ class CursorController:
 
         return False
 
-    def _check_blink_click(self, left_ear: float, right_ear: float) -> bool:
-        avg_ear = (left_ear + right_ear) / 2.0
-        is_blinking = avg_ear < config.BLINK_EAR_THRESHOLD
-
+    def _check_blink_click(self, is_blinking: bool) -> bool:
         if is_blinking:
             self._blink_counter += 1
             self._was_blinking = True

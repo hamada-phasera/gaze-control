@@ -7,7 +7,7 @@ import cv2
 import numpy as np
 
 from . import config
-from .gaze_estimator import OneEuroFilter
+from .filters import OneEuroFilter
 
 
 class HeadPoseResult(NamedTuple):
@@ -121,6 +121,14 @@ class HeadPoseEstimator:
     def has_baseline(self) -> bool:
         return self._baseline_yaw is not None
 
+    @property
+    def baseline_yaw(self) -> Optional[float]:
+        return self._baseline_yaw
+
+    @property
+    def baseline_pitch(self) -> Optional[float]:
+        return self._baseline_pitch
+
     def get_screen_offset(
         self, result: HeadPoseResult, sensitivity_mult: float = 1.0
     ) -> Tuple[float, float]:
@@ -143,6 +151,26 @@ class HeadPoseEstimator:
         delta_y = -delta_pitch * config.HEAD_SENSITIVITY_PITCH * sensitivity_mult
 
         return (delta_x, delta_y)
+
+    def yaw_offset(self, result: HeadPoseResult, gain: float) -> float:
+        """頭のヨー（左右）が基準からズレた分 × gain を返す（横ドリフト補正用）。
+
+        基準未設定 or gain=0 なら 0。
+        """
+        if self._baseline_yaw is None or gain == 0.0:
+            return 0.0
+        return (result.yaw - self._baseline_yaw) * gain
+
+    def vertical_assist(self, result: HeadPoseResult, gain: float) -> float:
+        """頭のピッチ（うなずき）から縦方向のオフセット (px) を返す。
+
+        基準より下を向く（pitch小）と正（下へ）、上を向くと負（上へ）。横は使わない。
+        基準未設定なら 0。
+        """
+        if self._baseline_pitch is None or gain == 0.0:
+            return 0.0
+        delta_pitch = result.pitch - self._baseline_pitch
+        return -delta_pitch * gain
 
     def get_head_screen_position(
         self, result: HeadPoseResult, sensitivity_mult: float = 1.0

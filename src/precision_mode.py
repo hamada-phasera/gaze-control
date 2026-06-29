@@ -36,28 +36,41 @@ class PrecisionModeDetector:
     def is_active(self) -> bool:
         return self._is_active
 
-    def update(self, landmarks: object) -> bool:
-        """ランドマークから精密モード状態を更新する
+    def update(
+        self,
+        landmarks: object,
+        brow_score: Optional[float] = None,
+        t: Optional[float] = None,
+    ) -> bool:
+        """ランドマーク／blendshapeから精密モード状態を更新する
 
         Args:
-            landmarks: MediaPipe Face Meshのランドマーク
+            landmarks: MediaPipe のランドマーク（幾何フォールバック時に使用）
+            brow_score: blendshape の眉上げスコア(0〜1)。あれば最優先で使う
+            t: タイムスタンプ(秒)。None なら time.time()
 
         Returns:
             True if precision mode is active
         """
-        ratio = self._compute_brow_raise_ratio(landmarks)
-        now = time.time()
+        now = t if t is not None else time.time()
 
-        # ベースライン収集（最初の30フレーム分）
-        if self._baseline_ratio is None:
-            self._baseline_samples.append(ratio)
-            if len(self._baseline_samples) >= 30:
-                self._baseline_ratio = sum(self._baseline_samples) / len(self._baseline_samples)
-                self._baseline_samples.clear()
-            return False
+        if brow_score is not None and config.USE_BLENDSHAPE_BROW:
+            # blendshape優先: 正規化済みスコアなのでベースライン不要
+            is_raised = brow_score >= config.PRECISION_MODE_BLENDSHAPE_THRESHOLD
+        else:
+            # 幾何フォールバック: 眉-目間距離をベースラインと比較
+            ratio = self._compute_brow_raise_ratio(landmarks)
 
-        # 眉が上がっているかの判定（ベースラインからの差分）
-        is_raised = (ratio - self._baseline_ratio) > self._brow_threshold
+            # ベースライン収集（最初の30フレーム分）
+            if self._baseline_ratio is None:
+                self._baseline_samples.append(ratio)
+                if len(self._baseline_samples) >= 30:
+                    self._baseline_ratio = sum(self._baseline_samples) / len(self._baseline_samples)
+                    self._baseline_samples.clear()
+                return False
+
+            # 眉が上がっているかの判定（ベースラインからの差分）
+            is_raised = (ratio - self._baseline_ratio) > self._brow_threshold
 
         if not self._is_active:
             # 非アクティブ → アクティブへの遷移

@@ -68,6 +68,29 @@ class TestCursorController:
         assert clicked is False
 
     @patch("src.cursor_controller.pyautogui")
+    def test_blink_click_via_blendshape(self, mock_pyautogui: MagicMock) -> None:
+        """blendshape瞬きスコアでクリックが成立する"""
+        mock_pyautogui.size.return_value = (1920, 1080)
+
+        controller = CursorController(blink_click=True)
+        # 閉眼（高スコア）を数フレーム → 開眼で確定
+        for _ in range(5):
+            controller.update(500.0, 300.0, 0.3, 0.3, 1.0, blink_score=0.9)
+        clicked = controller.update(500.0, 300.0, 0.3, 0.3, 1.0, blink_score=0.0)
+        assert clicked is True
+
+    @patch("src.cursor_controller.pyautogui")
+    def test_blendshape_overrides_ear(self, mock_pyautogui: MagicMock) -> None:
+        """EARは開眼(0.3)でも、blendshape瞬きスコアが高ければ閉眼として扱う"""
+        mock_pyautogui.size.return_value = (1920, 1080)
+
+        controller = CursorController(blink_click=True)
+        for _ in range(5):
+            controller.update(500.0, 300.0, 0.3, 0.3, 1.0, blink_score=0.9)
+        clicked = controller.update(500.0, 300.0, 0.3, 0.3, 1.0, blink_score=0.0)
+        assert clicked is True
+
+    @patch("src.cursor_controller.pyautogui")
     def test_inertia_smooth_movement(self, mock_pyautogui: MagicMock) -> None:
         """慣性: カーソルが一度に目標へジャンプせず、徐々に近づく"""
         mock_pyautogui.size.return_value = (1920, 1080)

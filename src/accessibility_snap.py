@@ -122,6 +122,82 @@ class AccessibilitySnap:
 
         return best_pos if best_pos is not None else (x, y)
 
+    def element_frame_at(
+        self, x: float, y: float
+    ) -> Optional[Tuple[float, float, float, float]]:
+        """指定座標のインタラクティブUI要素の (中心x, 中心y, 幅, 高さ) を返す。
+
+        形状スナップ用。要素が無い/取得不能なら None。
+        """
+        if not _AX_AVAILABLE or self._system_wide is None:
+            return None
+        return self._get_interactable_frame(x, y)
+
+    def _get_interactable_frame(
+        self, x: float, y: float
+    ) -> Optional[Tuple[float, float, float, float]]:
+        """指定座標のUI要素がインタラクション可能なら (中心x, 中心y, 幅, 高さ) を返す"""
+        if self._system_wide is None:
+            return None
+        try:
+            err, element = AXUIElementCopyElementAtPosition(
+                self._system_wide, float(x), float(y)
+            )
+        except Exception:
+            return None
+        if err != 0 or element is None:
+            return None
+        try:
+            role = self._get_attribute(element, "AXRole")
+            if role not in _INTERACTABLE_ROLES:
+                return None
+            position = self._get_attribute(element, "AXPosition")
+            size = self._get_attribute(element, "AXSize")
+            if position is None or size is None:
+                return None
+            pos_x = Quartz.CGPointGetX(position) if hasattr(Quartz, "CGPointGetX") else position.x
+            pos_y = Quartz.CGPointGetY(position) if hasattr(Quartz, "CGPointGetY") else position.y
+            width = Quartz.CGSizeGetWidth(size) if hasattr(Quartz, "CGSizeGetWidth") else size.width
+            height = Quartz.CGSizeGetHeight(size) if hasattr(Quartz, "CGSizeGetHeight") else size.height
+            return (pos_x + width / 2.0, pos_y + height / 2.0, float(width), float(height))
+        except Exception:
+            return None
+
+    def nearest_element_frame(
+        self, x: float, y: float, radius: Optional[float] = None
+    ) -> Optional[Tuple[float, float, float, float]]:
+        """近傍の最寄りインタラクティブ要素の (中心x, 中心y, 幅, 高さ) を返す（磁石スナップ用）。
+
+        まず直下を見て、無ければリング状に少数サンプルして最寄りを探す。
+        AX呼び出しを抑えるため間引いた探索（直下＋16点）。
+        """
+        if not _AX_AVAILABLE or self._system_wide is None:
+            return None
+        r = self._snap_radius if radius is None else float(radius)
+
+        frame = self._get_interactable_frame(x, y)
+        if frame is not None:
+            return frame
+
+        best: Optional[Tuple[float, float, float, float]] = None
+        best_dist = float("inf")
+        seen: set = set()
+        for rr in (r * 0.5, r):
+            for k in range(8):
+                ang = 2.0 * math.pi * k / 8.0
+                f = self._get_interactable_frame(x + rr * math.cos(ang), y + rr * math.sin(ang))
+                if f is None:
+                    continue
+                key = (int(f[0]), int(f[1]))
+                if key in seen:
+                    continue
+                seen.add(key)
+                d = math.hypot(f[0] - x, f[1] - y)
+                if d < best_dist and d <= r:
+                    best_dist = d
+                    best = f
+        return best
+
     def _get_interactable_center(
         self, x: float, y: float
     ) -> Optional[Tuple[float, float]]:

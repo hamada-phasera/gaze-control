@@ -119,6 +119,45 @@ class TestGazeEstimator:
         expected = np.array([0.3, 0.7, 0.09, 0.49, 0.21, 1.0])
         np.testing.assert_allclose(features, expected, atol=1e-10)
 
+    def test_vertical_offset_down_boost(self) -> None:
+        # 下(avg_y>0)はブーストで増幅、上(avg_y<0)は等倍
+        down = GazeEstimator._vertical_offset(0.4, 2.0, 1.0, 0.5, 1.0, 0.5)
+        assert down > 0.4 * 2.0
+        up = GazeEstimator._vertical_offset(-0.4, 2.0, 1.0, 0.5, 1.0, 0.5)
+        assert up == pytest.approx(-0.4 * 2.0)
+
+    def test_vertical_offset_v_gain(self) -> None:
+        # down_boost=0 なら v_gain 倍そのまま
+        out = GazeEstimator._vertical_offset(0.2, 2.0, 1.5, 0.0, 1.0, 0.5)
+        assert out == pytest.approx(0.2 * 2.0 * 1.5)
+
+    def test_vertical_offset_sign_flip(self) -> None:
+        # sign=-1 のとき、下向き判定が反転（avg_y<0 が増幅される）
+        out = GazeEstimator._vertical_offset(-0.4, 2.0, 1.0, 0.5, -1.0, 0.5)
+        assert abs(out) > abs(-0.4 * 2.0)
+
+    def test_eye_weights(self) -> None:
+        assert GazeEstimator._eye_weights("right", 0.8) == pytest.approx((0.2, 0.8))
+        assert GazeEstimator._eye_weights("left", 0.8) == pytest.approx((0.8, 0.2))
+        assert GazeEstimator._eye_weights("both", 0.9) == (0.5, 0.5)
+        # weight は [0.5,1.0] にクランプ
+        assert GazeEstimator._eye_weights("right", 0.2) == (0.5, 0.5)
+        assert GazeEstimator._eye_weights("right", 1.5) == pytest.approx((0.0, 1.0))
+
+    def test_offset_applied_via_setter(self) -> None:
+        est = GazeEstimator(1920, 1080, skip_model=True)
+        est.set_offset(30.0, -20.0)
+        assert est._offset_x == 30.0 and est._offset_y == -20.0
+        est.release()
+
+    def test_down_smooth_scale(self) -> None:
+        # 上端/中央は1.0、最下端で 1-down_smooth、無効化は常に1.0
+        assert GazeEstimator._down_smooth_scale(0.0, 1000.0, 0.6) == 1.0
+        assert GazeEstimator._down_smooth_scale(500.0, 1000.0, 0.6) == 1.0
+        assert GazeEstimator._down_smooth_scale(1000.0, 1000.0, 0.6) == pytest.approx(0.4)
+        assert GazeEstimator._down_smooth_scale(750.0, 1000.0, 0.6) == pytest.approx(0.7)
+        assert GazeEstimator._down_smooth_scale(1000.0, 1000.0, 0.0) == 1.0
+
     def test_compute_calibration_polynomial_accuracy(self) -> None:
         estimator = GazeEstimator(1920, 1080, skip_model=True)
 

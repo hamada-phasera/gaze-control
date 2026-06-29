@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# GazeControl ランチャー — venv を自動で有効化して起動する。
+#
+#   ./run.sh                  # 推奨プリセットで起動（仮想カーソル＋形状スナップ等）
+#   ./run.sh --recalibrate    # 追加/上書きフラグを渡す（プリセットを使わず全部指定も可）
+#   ./run.sh --sensitivity 1.5 --max-speed 500
+#
+# 毎回 `source .venv/bin/activate` する必要はありません。
+set -e
+cd "$(dirname "$0")"
+
+# 初回のみ: 仮想環境を作って依存をインストール
+if [ ! -x ".venv/bin/python" ]; then
+  echo "初回セットアップ: .venv を作成して依存をインストールします..."
+  python3 -m venv .venv
+  ./.venv/bin/python -m pip install --upgrade pip
+  ./.venv/bin/python -m pip install -r requirements.txt
+fi
+
+# 推奨プリセット＋渡された引数（後勝ちで上書き）。
+#   ./run.sh                       # プリセットそのまま
+#   ./run.sh --hold-radius 160     # プリセット + ここを上書き（固定を強く）
+#   ./run.sh --sensitivity 1.5     # 感度だけ変更、他はプリセット
+# 安定ベースライン（増幅系オフ）。利き目=両目、距離適応/レンジ/下方向ブースト等は既定(無効)。
+# 必要な調整は ./run.sh --distance-adapt 0.5 のように後から1つずつ足す。
+PRESET=(--virtual-cursor --show-window --debug --no-hotkeys --snap-shape \
+        --eye both --sensitivity 1.0 --dwell-time 0.3 --max-speed 1500)
+
+exec ./.venv/bin/python main.py "${PRESET[@]}" "$@"

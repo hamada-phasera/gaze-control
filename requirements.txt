@@ -4,5 +4,12 @@ pyautogui>=0.9.54
 numpy>=1.24.0
 screeninfo>=0.8.1
 pynput>=1.7.6
-pyobjc-framework-ApplicationServices>=10.0
-pyobjc-framework-Quartz>=10.0
+# pyobjc 12.0 は Python 3.9 用 wheel が無く、最新clangでソースビルドが失敗するため <12 に固定
+# （11.x は cp39〜cp312 の wheel あり。基本APIのみ使用のため 11 系で十分）
+pyobjc-core>=10.0,<12.0
+pyobjc-framework-ApplicationServices>=10.0,<12.0
+pyobjc-framework-Quartz>=10.0,<12.0
+
+# 仮想カーソル（--virtual-cursor）のオーバーレイ描画にのみ使用。
+# 通常モード（OSカーソル制御）では不要。
+PySide6>=6.5.0
